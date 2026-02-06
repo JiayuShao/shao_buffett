@@ -2,7 +2,7 @@
 
 import structlog
 from discord.ext import tasks
-from bot.client import BuffetShaoBot
+from bot.client import ShaoBuffettBot
 from data.manager import DataManager
 from ai.engine import AIEngine
 from notifications.dispatcher import NotificationDispatcher
@@ -31,7 +31,7 @@ class Scheduler:
 
     def __init__(
         self,
-        bot: BuffetShaoBot,
+        bot: ShaoBuffettBot,
         data_manager: DataManager,
         dispatcher: NotificationDispatcher,
         ai_engine: AIEngine,
@@ -49,6 +49,7 @@ class Scheduler:
         self._poll_macro.start()
         self._check_briefings.start()
         self._cleanup_cache.start()
+        self._generate_proactive_insights.start()
         log.info("scheduler_all_tasks_started")
 
     def stop(self) -> None:
@@ -60,6 +61,7 @@ class Scheduler:
             self._poll_macro,
             self._check_briefings,
             self._cleanup_cache,
+            self._generate_proactive_insights,
         ]:
             if task.is_running():
                 task.cancel()
@@ -150,6 +152,23 @@ class Scheduler:
         elif current_time == "16:15" and now.weekday() < 5:
             await generate_evening_summary(self.ai_engine, self.dm, self.dispatcher)
 
+    @tasks.loop(minutes=30)
+    async def _generate_proactive_insights(self) -> None:
+        """Generate and dispatch proactive insights for users with portfolios."""
+        try:
+            from scheduler.proactive import ProactiveInsightGenerator
+            generator = ProactiveInsightGenerator(
+                db_pool=self.bot.db_pool,
+                data_manager=self.dm,
+                dispatcher=self.dispatcher,
+            )
+            created = await generator.generate_all()
+            if created > 0:
+                sent = await generator.dispatch_pending()
+                log.info("proactive_insights_generated", created=created, sent=sent)
+        except Exception as e:
+            log.error("proactive_insights_error", error=str(e))
+
     @tasks.loop(seconds=CACHE_CLEANUP_INTERVAL)
     async def _cleanup_cache(self) -> None:
         """Periodically clean expired cache entries."""
@@ -176,6 +195,10 @@ class Scheduler:
 
     @_check_briefings.before_loop
     async def _before_check_briefings(self) -> None:
+        await self.bot.wait_until_ready()
+
+    @_generate_proactive_insights.before_loop
+    async def _before_proactive_insights(self) -> None:
         await self.bot.wait_until_ready()
 
     @_cleanup_cache.before_loop

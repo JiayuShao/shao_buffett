@@ -7,7 +7,11 @@ def stock_analysis_prompt(symbol: str, metrics: list[str] | None = None) -> str:
     return (
         f"Analyze {symbol} for me. Fetch the current quote, company profile, key fundamentals, "
         f"analyst recommendations, and recent earnings. Focus on these metrics: {metric_str}. "
-        f"Also check for any recent news. Provide a concise analysis with bull/bear cases."
+        f"Also check for any recent news. Provide a concise analysis with:\n"
+        f"- Bull case and bear case with specific data points\n"
+        f"- **Confidence Assessment**: Rate 1-10 with justification\n"
+        f"- **Biggest Risk**: Single strongest argument against the thesis\n"
+        f"- **Self-Critique**: What would change your view?"
     )
 
 
@@ -59,5 +63,11 @@ def deep_research_prompt(symbol: str) -> str:
         f"4) Recent earnings data, 5) Latest news, 6) Recent SEC filings. "
         f"Synthesize all data into a comprehensive research note with: "
         f"Executive Summary, Business Overview, Financial Analysis, Valuation Assessment, "
-        f"Competitive Position, Risk Analysis, and Investment Conclusion with price target justification."
+        f"Competitive Position, Risk Analysis, and Investment Conclusion with price target justification.\n\n"
+        f"REQUIRED at the end of your analysis:\n"
+        f"- **Confidence**: [1-10] with justification\n"
+        f"- **Weakest Point**: Explicitly identify the weakest part of your thesis\n"
+        f"- **Disconfirming Evidence**: What specific data did you find that argues AGAINST your conclusion?\n"
+        f"- **Would Change My View If**: Specific, observable future conditions\n"
+        f"- **Data Gaps**: What information was unavailable that would improve this analysis?"
     )

@@ -1,4 +1,4 @@
-"""Claude tool definitions for financial data access."""
+"""Claude tool definitions for financial data access and personal analyst features."""
 
 # Tool definitions following the Anthropic tool-use format
 FINANCIAL_TOOLS = [
@@ -169,6 +169,173 @@ FINANCIAL_TOOLS = [
                     "type": "integer",
                     "description": "Maximum papers to return (default 10)",
                     "default": 10,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_polymarket",
+        "description": "Get prediction market data from Polymarket for macro, political, crypto, or other event outcomes. Returns market-implied probabilities. Useful for gauging market sentiment on Fed rate decisions, elections, regulatory actions, crypto milestones, and geopolitical events.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query for prediction markets (e.g. 'Fed rate cut', 'Bitcoin 100k', 'recession 2025')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of markets to return (default 5)",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    # --- Personal Analyst Tools ---
+    {
+        "name": "save_note",
+        "description": "Save a note about the user for cross-conversation memory. Use this proactively when the user shares financial info, makes decisions, expresses concerns, or when key insights emerge. Do NOT ask permission — just save it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note_type": {
+                    "type": "string",
+                    "enum": ["insight", "decision", "action_item", "preference", "concern"],
+                    "description": "Type of note: insight (analytical finding), decision (user's choice), action_item (something to follow up on), preference (user preference), concern (worry or risk)",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The note content — be specific and include relevant numbers/dates",
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Related stock ticker symbols (optional)",
+                },
+            },
+            "required": ["note_type", "content"],
+        },
+    },
+    {
+        "name": "get_user_notes",
+        "description": "Retrieve the user's saved notes for context. Use at the start of substantive conversations or when discussing topics the user has previously mentioned.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note_type": {
+                    "type": "string",
+                    "enum": ["insight", "decision", "action_item", "preference", "concern"],
+                    "description": "Filter by note type (optional, omit for all types)",
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter by related symbols (optional)",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search note content (optional)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "resolve_action_item",
+        "description": "Mark an action item as resolved/complete.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "note_id": {
+                    "type": "integer",
+                    "description": "The ID of the action item to resolve",
+                }
+            },
+            "required": ["note_id"],
+        },
+    },
+    {
+        "name": "get_portfolio",
+        "description": "Get the user's portfolio holdings including symbols, shares, cost basis, and account type. Use this when discussing portfolio value, allocation, or specific positions.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "update_portfolio",
+        "description": "Add, update, or remove a position in the user's portfolio. Use when the user mentions buying, selling, or adjusting positions (e.g. 'I bought 100 AAPL at $185').",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "remove"],
+                    "description": "Whether to add/update or remove the position",
+                },
+                "symbol": {
+                    "type": "string",
+                    "description": "Stock ticker symbol",
+                },
+                "shares": {
+                    "type": "number",
+                    "description": "Number of shares (for add/update)",
+                },
+                "cost_basis": {
+                    "type": "number",
+                    "description": "Cost per share (optional)",
+                },
+                "account_type": {
+                    "type": "string",
+                    "enum": ["taxable", "ira", "roth_ira", "401k"],
+                    "description": "Account type (default: taxable)",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Optional notes about the position",
+                },
+            },
+            "required": ["action", "symbol"],
+        },
+    },
+    {
+        "name": "get_financial_profile",
+        "description": "Get the user's financial profile including income, goals, investment horizon, and tax bracket.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "update_financial_profile",
+        "description": "Update the user's financial profile when they share financial details in conversation (income, goals, horizon, tax info).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "annual_income": {
+                    "type": "number",
+                    "description": "Annual income in USD",
+                },
+                "investment_horizon": {
+                    "type": "string",
+                    "description": "Investment time horizon (e.g. '5-10 years', 'long-term', 'retirement in 20 years')",
+                },
+                "goals": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Financial goals (replaces existing goals)",
+                },
+                "tax_bracket": {
+                    "type": "string",
+                    "description": "Tax bracket (e.g. '24%', '32%')",
+                },
+                "monthly_investment": {
+                    "type": "number",
+                    "description": "Monthly investment amount in USD",
                 },
             },
             "required": [],

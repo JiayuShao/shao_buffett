@@ -10,6 +10,7 @@ from data.collectors.marketaux import MarketAuxCollector
 from data.collectors.fmp import FMPCollector
 from data.collectors.sec_edgar import SECEdgarCollector
 from data.collectors.arxiv_research import ArxivCollector
+from data.collectors.polymarket import PolymarketCollector
 from config.constants import API_RATE_LIMITS, CACHE_TTL
 
 log = structlog.get_logger(__name__)
@@ -33,6 +34,7 @@ class DataManager:
         self.fmp = FMPCollector(self.rate_limiter)
         self.sec_edgar = SECEdgarCollector(self.rate_limiter)
         self.arxiv = ArxivCollector(self.rate_limiter)
+        self.polymarket = PolymarketCollector(self.rate_limiter)
 
     async def start(self) -> None:
         """Initialize all collectors."""
@@ -40,7 +42,7 @@ class DataManager:
 
     async def close(self) -> None:
         """Close all collector sessions."""
-        collectors = [self.finnhub, self.fred, self.marketaux, self.fmp, self.sec_edgar, self.arxiv]
+        collectors = [self.finnhub, self.fred, self.marketaux, self.fmp, self.sec_edgar, self.arxiv, self.polymarket]
         for collector in collectors:
             await collector.close()
         await self.finnhub.stop_websocket()
@@ -56,6 +58,7 @@ class DataManager:
             "fmp": self.fmp,
             "sec_edgar": self.sec_edgar,
             "arxiv": self.arxiv,
+            "polymarket": self.polymarket,
         }
         for name, collector in checks.items():
             try:
@@ -210,3 +213,15 @@ class DataManager:
         if query:
             return await self.arxiv.search_papers(query=query, max_results=max_results)
         return await self.arxiv.get_recent_papers(max_results=max_results)
+
+    async def get_polymarket(
+        self, query: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Get prediction market data from Polymarket."""
+        key = f"polymarket:{query}:{limit}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+        data = await self.polymarket.search_markets(query, limit=limit)
+        self.cache.set(key, data, CACHE_TTL["news"])  # Same TTL as news (5 min)
+        return data

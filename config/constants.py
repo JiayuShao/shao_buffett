@@ -27,6 +27,7 @@ API_RATE_LIMITS = {
     "fmp": 30,
     "sec_edgar": 10,      # 10 req/sec but we go conservative
     "arxiv": 10,
+    "polymarket": 30,
 }
 
 # Polling intervals (seconds)
@@ -103,6 +104,7 @@ class NotificationType(str, Enum):
     RESEARCH_DIGEST = "research_digest"
     MORNING_BRIEFING = "morning_briefing"
     EVENING_SUMMARY = "evening_summary"
+    PROACTIVE_INSIGHT = "proactive_insight"
 
 # Risk tolerance
 class RiskTolerance(str, Enum):

@@ -5,7 +5,7 @@ import structlog
 from config.settings import settings
 from config.logging_config import setup_logging
 from storage.database import get_pool, close_pool, run_migrations
-from bot.client import BuffetShaoBot
+from bot.client import ShaoBuffettBot
 from bot.events import setup_events
 from data.manager import DataManager
 from ai.engine import AIEngine
@@ -18,9 +18,9 @@ log = structlog.get_logger(__name__)
 async def start_bot() -> None:
     """Initialize all services and start the bot."""
     setup_logging()
-    log.info("starting_buffet_shao")
+    log.info("starting_shao_buffett")
 
-    bot = BuffetShaoBot()
+    bot = ShaoBuffettBot()
 
     # Initialize database
     pool = await get_pool()
@@ -64,6 +64,8 @@ async def start_bot() -> None:
         "bot.cogs.briefing",
         "bot.cogs.chat",
         "bot.cogs.admin",
+        "bot.cogs.notes",
+        "bot.cogs.portfolio",
     ]
     for module in cog_modules:
         try:

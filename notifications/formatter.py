@@ -20,6 +20,7 @@ def format_notification(notif: Notification) -> discord.Embed:
         NotificationType.SEC_FILING: _format_filing,
         NotificationType.EARNINGS_TRANSCRIPT: _format_transcript,
         NotificationType.RESEARCH_DIGEST: _format_research,
+        NotificationType.PROACTIVE_INSIGHT: _format_proactive_insight,
     }
 
     formatter = formatters.get(notif.type, _format_default)
@@ -37,7 +38,7 @@ def _format_price_alert(notif: Notification) -> discord.Embed:
         description=f"**{notif.symbol}** is now ${price:.2f} ({condition} {format_currency(threshold)})",
         color=EmbedColor.ALERT,
     )
-    embed.set_footer(text="Buffet Shao • Price Alert")
+    embed.set_footer(text="Shao Buffett • Price Alert")
     return embed
 
 
@@ -61,7 +62,7 @@ def _format_news(notif: Notification) -> discord.Embed:
         embed.add_field(name="Ticker", value=notif.symbol, inline=True)
     if data.get("url"):
         embed.url = data["url"]
-    embed.set_footer(text="Buffet Shao • Breaking News")
+    embed.set_footer(text="Shao Buffett • Breaking News")
     return embed
 
 
@@ -82,7 +83,7 @@ def _format_analyst(notif: Notification) -> discord.Embed:
         embed.add_field(name="From", value=data["from_grade"], inline=True)
     if data.get("to_grade"):
         embed.add_field(name="To", value=data["to_grade"], inline=True)
-    embed.set_footer(text="Buffet Shao • Analyst Action")
+    embed.set_footer(text="Shao Buffett • Analyst Action")
     return embed
 
 
@@ -97,7 +98,7 @@ def _format_target_change(notif: Notification) -> discord.Embed:
         embed.add_field(name="Old Target", value=format_currency(data["old_target"]), inline=True)
     if data.get("new_target"):
         embed.add_field(name="New Target", value=format_currency(data["new_target"]), inline=True)
-    embed.set_footer(text="Buffet Shao • Price Target")
+    embed.set_footer(text="Shao Buffett • Price Target")
     return embed
 
 
@@ -117,7 +118,7 @@ def _format_earnings(notif: Notification) -> discord.Embed:
     if data.get("estimated_eps") is not None:
         embed.add_field(name="EPS Est.", value=f"${data['estimated_eps']:.2f}", inline=True)
     embed.add_field(name="Surprise", value=format_percent(surprise), inline=True)
-    embed.set_footer(text="Buffet Shao • Earnings")
+    embed.set_footer(text="Shao Buffett • Earnings")
     return embed
 
 
@@ -127,7 +128,7 @@ def _format_macro(notif: Notification) -> discord.Embed:
         description=notif.description,
         color=EmbedColor.MACRO,
     )
-    embed.set_footer(text="Buffet Shao • Macro Data")
+    embed.set_footer(text="Shao Buffett • Macro Data")
     return embed
 
 
@@ -144,7 +145,7 @@ def _format_insider(notif: Notification) -> discord.Embed:
         embed.add_field(name="Type", value=data["transaction_type"], inline=True)
     if data.get("value"):
         embed.add_field(name="Value", value=format_currency(data["value"]), inline=True)
-    embed.set_footer(text="Buffet Shao • Insider Trade")
+    embed.set_footer(text="Shao Buffett • Insider Trade")
     return embed
 
 
@@ -159,7 +160,7 @@ def _format_filing(notif: Notification) -> discord.Embed:
         embed.add_field(name="Filed", value=data["file_date"], inline=True)
     if data.get("url"):
         embed.url = data["url"]
-    embed.set_footer(text="Buffet Shao • SEC Filing")
+    embed.set_footer(text="Shao Buffett • SEC Filing")
     return embed
 
 
@@ -169,7 +170,7 @@ def _format_transcript(notif: Notification) -> discord.Embed:
         description=truncate(notif.description, 4096),
         color=EmbedColor.EARNINGS,
     )
-    embed.set_footer(text="Buffet Shao • Earnings Transcript Summary")
+    embed.set_footer(text="Shao Buffett • Earnings Transcript Summary")
     return embed
 
 
@@ -179,7 +180,32 @@ def _format_research(notif: Notification) -> discord.Embed:
         description=truncate(notif.description, 4096),
         color=EmbedColor.RESEARCH,
     )
-    embed.set_footer(text="Buffet Shao • Research Digest")
+    embed.set_footer(text="Shao Buffett • Research Digest")
+    return embed
+
+
+def _format_proactive_insight(notif: Notification) -> discord.Embed:
+    data = notif.data
+    insight_type = data.get("insight_type", "")
+
+    type_config = {
+        "portfolio_drift": ("📊", EmbedColor.WARNING),
+        "earnings_upcoming": ("📅", EmbedColor.EARNINGS),
+        "price_movement": ("📈", EmbedColor.ALERT),
+        "news_relevant": ("📰", EmbedColor.NEWS),
+        "action_reminder": ("📋", EmbedColor.WARNING),
+        "symbol_suggestion": ("💡", EmbedColor.INFO),
+    }
+    emoji, color = type_config.get(insight_type, ("🔔", EmbedColor.INFO))
+
+    embed = discord.Embed(
+        title=f"{emoji} {notif.title}",
+        description=truncate(notif.description, 4096),
+        color=color,
+    )
+    if notif.symbol:
+        embed.add_field(name="Symbol", value=notif.symbol, inline=True)
+    embed.set_footer(text="Shao Buffett • Proactive Insight")
     return embed
 
 

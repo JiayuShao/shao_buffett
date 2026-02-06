@@ -13,6 +13,7 @@ from ai.multimodal import process_attachments
 from ai.prompts.system import BASE_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
 from config.settings import settings
 from data.manager import DataManager
+from storage.repositories.notes_repo import NotesRepository
 
 log = structlog.get_logger(__name__)
 
@@ -24,8 +25,10 @@ class AIEngine:
 
     def __init__(self, data_manager: DataManager, db_pool: asyncpg.Pool) -> None:
         self.data_manager = data_manager
+        self.db_pool = db_pool
         self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.conversation = ConversationManager(db_pool)
+        self.notes_repo = NotesRepository(db_pool)
 
     async def chat(
         self,
@@ -40,12 +43,22 @@ class AIEngine:
 
         Returns the final text response.
         """
-        model_config = route_request(content, force_tier=force_model)
-
         # Build user context
         profile = await self.conversation.get_user_profile(user_id)
         watchlist = await self.conversation.get_user_watchlist(user_id)
         history = await self.conversation.get_history(user_id, channel_id)
+
+        # Check if user has portfolio for smarter routing
+        has_portfolio = False
+        try:
+            from storage.repositories.portfolio_repo import PortfolioRepository
+            portfolio_repo = PortfolioRepository(self.db_pool)
+            portfolio_symbols = await portfolio_repo.get_symbols(user_id)
+            has_portfolio = len(portfolio_symbols) > 0
+        except Exception:
+            pass
+
+        model_config = route_request(content, force_tier=force_model, has_portfolio=has_portfolio)
 
         # Build system prompt with user context
         sys_prompt = system_prompt or BASE_SYSTEM_PROMPT
@@ -57,6 +70,9 @@ class AIEngine:
                 sys_prompt += f"\nUser's focused metrics: {', '.join(metrics)}"
         if profile.get("risk_tolerance"):
             sys_prompt += f"\nUser's risk tolerance: {profile['risk_tolerance']}"
+
+        # Inject conversation notes for cross-conversation memory
+        sys_prompt = await self._inject_user_context(user_id, sys_prompt)
 
         # Build messages
         messages: list[dict[str, Any]] = []
@@ -82,6 +98,7 @@ class AIEngine:
             model_config=model_config,
             system_prompt=sys_prompt,
             messages=messages,
+            user_id=user_id,
         )
 
         # Track Opus usage
@@ -92,6 +109,9 @@ class AIEngine:
         await self.conversation.save_message(
             user_id, channel_id, "assistant", response_text, model_config.model_id
         )
+
+        # Log user activity for proactive insight generation
+        await self._log_activity(user_id, content)
 
         return response_text
 
@@ -119,6 +139,7 @@ class AIEngine:
         model_config: ModelConfig,
         system_prompt: str,
         messages: list[dict[str, Any]],
+        user_id: int | None = None,
     ) -> str:
         """Execute the agentic tool-use loop until the model stops calling tools."""
         for round_num in range(MAX_TOOL_ROUNDS):
@@ -140,7 +161,7 @@ class AIEngine:
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
-                        result = await self._execute_tool(block.name, block.input)
+                        result = await self._execute_tool(block.name, block.input, user_id=user_id)
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -159,7 +180,99 @@ class AIEngine:
 
         return "I reached the maximum number of analysis steps. Here's what I found so far."
 
-    async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any]) -> Any:
+    async def _log_activity(self, user_id: int, content: str) -> None:
+        """Log user activity for proactive insight generation."""
+        try:
+            import re
+            from storage.repositories.activity_repo import ActivityRepository
+
+            # Extract mentioned symbols (uppercase 1-5 letter words that look like tickers)
+            symbols = re.findall(r'\b([A-Z]{1,5})\b', content)
+            # Filter common English words that look like tickers
+            noise = {"I", "A", "THE", "AND", "OR", "FOR", "IN", "ON", "AT", "TO", "IS", "IT", "AN", "OF", "MY", "AM", "DO", "IF", "SO", "NO", "UP", "VS"}
+            symbols = [s for s in symbols if s not in noise]
+
+            # Classify query type
+            content_lower = content.lower()
+            if any(w in content_lower for w in ["price", "quote", "how much"]):
+                query_type = "price_check"
+            elif any(w in content_lower for w in ["analyze", "analysis", "research"]):
+                query_type = "analysis"
+            elif any(w in content_lower for w in ["macro", "gdp", "cpi", "fed", "inflation", "rate"]):
+                query_type = "macro"
+            elif any(w in content_lower for w in ["news", "headline", "latest"]):
+                query_type = "news"
+            elif any(w in content_lower for w in ["earnings", "eps", "revenue"]):
+                query_type = "earnings"
+            elif any(w in content_lower for w in ["buy", "sell", "hold", "portfolio"]):
+                query_type = "portfolio_decision"
+            else:
+                query_type = "general"
+
+            repo = ActivityRepository(self.db_pool)
+            await repo.log_activity(user_id, query_type, symbols[:10])
+        except Exception as e:
+            log.debug("activity_log_error", error=str(e))
+
+    async def _inject_user_context(self, user_id: int, sys_prompt: str) -> str:
+        """Inject user's notes and portfolio into the system prompt."""
+        try:
+            # Fetch recent notes
+            recent_notes = await self.notes_repo.get_recent(user_id, limit=15)
+            action_items = await self.notes_repo.get_active_action_items(user_id)
+
+            if recent_notes:
+                notes_text = "\n## Your Notes About This User\n"
+                for n in recent_notes:
+                    symbols = f" [{', '.join(n['symbols'])}]" if n['symbols'] else ""
+                    notes_text += f"- [{n['note_type']}]{symbols} {n['content']}\n"
+                sys_prompt += notes_text
+
+            if action_items:
+                items_text = "\n## Open Action Items\n"
+                for item in action_items:
+                    symbols = f" [{', '.join(item['symbols'])}]" if item['symbols'] else ""
+                    items_text += f"- #{item['id']}{symbols}: {item['content']}\n"
+                sys_prompt += items_text
+
+            # Fetch portfolio holdings if available
+            try:
+                from storage.repositories.portfolio_repo import PortfolioRepository, FinancialProfileRepository
+                portfolio_repo = PortfolioRepository(self.db_pool)
+                profile_repo = FinancialProfileRepository(self.db_pool)
+
+                holdings = await portfolio_repo.get_holdings(user_id)
+                fin_profile = await profile_repo.get(user_id)
+
+                if holdings:
+                    portfolio_text = "\n## User's Portfolio Holdings\n"
+                    for h in holdings:
+                        cost = f" @ ${h['cost_basis']:.2f}" if h.get('cost_basis') else ""
+                        acct = f" ({h['account_type']})" if h.get('account_type') else ""
+                        portfolio_text += f"- {h['symbol']}: {h['shares']} shares{cost}{acct}\n"
+                    sys_prompt += portfolio_text
+
+                if fin_profile:
+                    profile_parts = []
+                    if fin_profile.get("investment_horizon"):
+                        profile_parts.append(f"Investment horizon: {fin_profile['investment_horizon']}")
+                    if fin_profile.get("tax_bracket"):
+                        profile_parts.append(f"Tax bracket: {fin_profile['tax_bracket']}")
+                    if fin_profile.get("goals"):
+                        goals = fin_profile["goals"]
+                        if isinstance(goals, list):
+                            profile_parts.append(f"Goals: {', '.join(goals)}")
+                    if profile_parts:
+                        sys_prompt += "\n## User's Financial Profile\n" + "\n".join(f"- {p}" for p in profile_parts) + "\n"
+            except ImportError:
+                pass  # Portfolio repo not yet created (Phase 2)
+
+        except Exception as e:
+            log.warning("context_injection_error", error=str(e))
+
+        return sys_prompt
+
+    async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int | None = None) -> Any:
         """Execute a financial data tool and return the result."""
         log.info("tool_call", tool=tool_name, input=tool_input)
 
@@ -202,9 +315,96 @@ class AIEngine:
                         query=tool_input.get("query"),
                         max_results=tool_input.get("max_results", 10),
                     )
+                case "get_polymarket":
+                    return await self.data_manager.get_polymarket(
+                        query=tool_input["query"],
+                        limit=tool_input.get("limit", 5),
+                    )
                 case "generate_chart":
                     # Chart generation is handled separately — return a placeholder
                     return {"status": "chart_requested", "params": tool_input}
+
+                # --- Personal Analyst Tools ---
+                case "save_note":
+                    if not user_id:
+                        return {"error": "No user context for note-taking"}
+                    note_id = await self.notes_repo.add(
+                        discord_id=user_id,
+                        note_type=tool_input["note_type"],
+                        content=tool_input["content"],
+                        symbols=tool_input.get("symbols"),
+                    )
+                    return {"status": "saved", "note_id": note_id, "type": tool_input["note_type"]}
+
+                case "get_user_notes":
+                    if not user_id:
+                        return {"error": "No user context"}
+                    if tool_input.get("query"):
+                        return await self.notes_repo.search(user_id, tool_input["query"])
+                    if tool_input.get("symbols"):
+                        return await self.notes_repo.get_for_symbols(user_id, tool_input["symbols"])
+                    if tool_input.get("note_type"):
+                        return await self.notes_repo.get_by_type(user_id, tool_input["note_type"])
+                    return await self.notes_repo.get_recent(user_id)
+
+                case "resolve_action_item":
+                    if not user_id:
+                        return {"error": "No user context"}
+                    resolved = await self.notes_repo.resolve_action_item(tool_input["note_id"], user_id)
+                    return {"resolved": resolved, "note_id": tool_input["note_id"]}
+
+                case "get_portfolio":
+                    if not user_id:
+                        return {"error": "No user context"}
+                    from storage.repositories.portfolio_repo import PortfolioRepository
+                    repo = PortfolioRepository(self.db_pool)
+                    return await repo.get_holdings(user_id)
+
+                case "update_portfolio":
+                    if not user_id:
+                        return {"error": "No user context"}
+                    from storage.repositories.portfolio_repo import PortfolioRepository
+                    repo = PortfolioRepository(self.db_pool)
+                    action = tool_input.get("action", "add")
+                    if action == "remove":
+                        removed = await repo.remove(
+                            user_id, tool_input["symbol"],
+                            account_type=tool_input.get("account_type", "taxable"),
+                        )
+                        return {"status": "removed" if removed else "not_found", "symbol": tool_input["symbol"]}
+                    else:
+                        await repo.upsert(
+                            discord_id=user_id,
+                            symbol=tool_input["symbol"],
+                            shares=tool_input.get("shares", 0),
+                            cost_basis=tool_input.get("cost_basis"),
+                            account_type=tool_input.get("account_type", "taxable"),
+                            notes=tool_input.get("notes"),
+                        )
+                        return {"status": "updated", "symbol": tool_input["symbol"], "shares": tool_input.get("shares")}
+
+                case "get_financial_profile":
+                    if not user_id:
+                        return {"error": "No user context"}
+                    from storage.repositories.portfolio_repo import FinancialProfileRepository
+                    repo = FinancialProfileRepository(self.db_pool)
+                    return await repo.get(user_id) or {"status": "no_profile"}
+
+                case "update_financial_profile":
+                    if not user_id:
+                        return {"error": "No user context"}
+                    from storage.repositories.portfolio_repo import FinancialProfileRepository
+                    repo = FinancialProfileRepository(self.db_pool)
+                    await repo.upsert(
+                        discord_id=user_id,
+                        annual_income=tool_input.get("annual_income"),
+                        investment_horizon=tool_input.get("investment_horizon"),
+                        goals=tool_input.get("goals"),
+                        tax_bracket=tool_input.get("tax_bracket"),
+                        monthly_investment=tool_input.get("monthly_investment"),
+                    )
+                    return {"status": "updated"}
+
                 case _:
                     return {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
