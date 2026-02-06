@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Buffet Shao{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'brand': '#7C4DFF',
+                        'bull': '#00C853',
+                        'bear': '#FF1744',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+    <nav class="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span class="text-xl font-bold text-brand">Buffet Shao</span>
+            <span class="text-gray-500 text-sm">AI Financial Agent</span>
+        </div>
+        <div class="flex items-center gap-4">
+            {% if user %}
+            <a href="/dashboard" class="text-gray-300 hover:text-white text-sm">Dashboard</a>
+            <span class="text-gray-400 text-sm">{{ user.username }}</span>
+            <a href="/logout" class="text-gray-500 hover:text-gray-300 text-sm">Logout</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Buffet Shao{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Market Dashboard</h1>
+        <div class="flex items-center gap-3">
+            <span id="last-update" class="text-gray-500 text-sm"></span>
+            <button onclick="refreshAll()" class="bg-brand/20 text-brand px-3 py-1 rounded text-sm hover:bg-brand/30 transition-colors">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Watchlist -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold">Watchlist</h2>
+            <form action="/watchlist/add" method="POST" class="flex gap-2">
+                <input type="text" name="symbol" placeholder="Add ticker..."
+                       class="bg-gray-800 border border-gray-700 rounded px-3 py-1 text-sm w-24 focus:border-brand focus:outline-none">
+                <button type="submit" class="bg-brand text-white px-3 py-1 rounded text-sm hover:bg-brand/80">Add</button>
+            </form>
+        </div>
+        <div id="watchlist-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            {% for q in quotes %}
+            <div class="bg-gray-800 rounded-lg p-3 text-center">
+                <div class="font-semibold text-sm">{{ q.symbol }}</div>
+                <div class="text-lg font-mono">${{ "%.2f"|format(q.price) }}</div>
+                <div class="{{ 'text-bull' if q.change_pct >= 0 else 'text-bear' }} text-sm font-mono">
+                    {{ "+%.2f"|format(q.change_pct) if q.change_pct >= 0 else "%.2f"|format(q.change_pct) }}%
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Comparison Chart -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <h2 class="text-lg font-semibold mb-3">Performance Comparison</h2>
+            <div id="comparison-chart" class="w-full" style="height: 350px;"></div>
+        </div>
+
+        <!-- Sector Chart -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+            <h2 class="text-lg font-semibold mb-3">Sector Performance</h2>
+            <div id="sector-chart" class="w-full" style="height: 350px;"></div>
+        </div>
+    </div>
+
+    <!-- News -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <h2 class="text-lg font-semibold mb-3">Latest News</h2>
+        <div id="news-feed" class="space-y-3">
+            <p class="text-gray-500 text-sm">Loading news...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const quotesData = {{ quotes_json|safe }};
+</script>
+<script src="/static/dashboard.js"></script>
+{% endblock %}
