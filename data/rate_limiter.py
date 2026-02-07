@@ -2,8 +2,11 @@
 
 import asyncio
 import time
+import structlog
 from collections import defaultdict
 from typing import Callable, Awaitable
+
+log = structlog.get_logger(__name__)
 
 
 class RateLimiter:
@@ -36,6 +39,7 @@ class RateLimiter:
                 # Wait until the oldest entry expires
                 wait_time = 60.0 - (now - window[0])
                 if wait_time > 0:
+                    log.warning("rate_limit_throttle", api=api_name, wait_seconds=round(wait_time, 1))
                     await self._notify_rate_limit(api_name, wait_time)
                     await asyncio.sleep(wait_time)
                     # Clean up again after waiting

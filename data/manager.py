@@ -153,16 +153,71 @@ class DataManager:
     async def get_news(
         self, symbol: str | None = None, limit: int = 10
     ) -> list[dict[str, Any]]:
-        """Get news, optionally filtered by symbol."""
+        """Get news, optionally filtered by symbol. Falls back MarketAux → Finnhub."""
         key = f"news:{symbol or 'general'}:{limit}"
         cached = self.cache.get(key)
         if cached:
             return cached
-        if symbol:
-            data = await self.marketaux.get_news_for_symbol(symbol, limit=limit)
-        else:
-            data = await self.marketaux.get_news(limit=limit)
-        self.cache.set(key, data, CACHE_TTL["news"])
+
+        data: list[dict[str, Any]] = []
+        # Try MarketAux first (richer sentiment data)
+        try:
+            if symbol:
+                data = await self.marketaux.get_news_for_symbol(symbol, limit=limit)
+            else:
+                data = await self.marketaux.get_news(limit=limit)
+        except Exception:
+            pass
+
+        # Fallback to Finnhub company news if MarketAux failed
+        if not data and symbol:
+            try:
+                from datetime import datetime, timedelta
+                to_date = datetime.utcnow().strftime("%Y-%m-%d")
+                from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+                finnhub_articles = await self.finnhub.get_company_news(symbol, from_date, to_date)
+                log.info("finnhub_news_fallback", symbol=symbol, articles=len(finnhub_articles))
+                data = [
+                    {
+                        "title": a.get("headline", ""),
+                        "description": a.get("summary", ""),
+                        "snippet": a.get("summary", "")[:200],
+                        "url": a.get("url", ""),
+                        "source": a.get("source", ""),
+                        "published_at": a.get("datetime", ""),
+                        "symbols": [symbol],
+                        "sentiment": None,
+                        "relevance": None,
+                    }
+                    for a in finnhub_articles[:limit]
+                ]
+            except Exception:
+                pass
+
+        # Fallback to Finnhub general news if no symbol
+        if not data and not symbol:
+            try:
+                finnhub_articles = await self.finnhub.get_general_news()
+                log.info("finnhub_general_news_fallback", articles=len(finnhub_articles))
+                data = [
+                    {
+                        "title": a.get("headline", ""),
+                        "description": a.get("summary", ""),
+                        "snippet": a.get("summary", "")[:200],
+                        "url": a.get("url", ""),
+                        "source": a.get("source", ""),
+                        "published_at": a.get("datetime", ""),
+                        "symbols": [],
+                        "sentiment": None,
+                        "relevance": None,
+                    }
+                    for a in finnhub_articles[:limit]
+                ]
+            except Exception:
+                pass
+
+        if data:
+            self.cache.set(key, data, CACHE_TTL["news"])
         return data
 
     async def get_macro_data(self, series_id: str | None = None) -> Any:

@@ -1,5 +1,6 @@
 """Central scheduler using discord.ext.tasks for periodic polling and timed events."""
 
+import asyncio
 import structlog
 from discord.ext import tasks
 from bot.client import ShaoBuffettBot
@@ -75,19 +76,26 @@ class Scheduler:
             if not all_symbols:
                 return
 
+            symbols_list = list(all_symbols)[:5]  # Cap to 5 to save Finnhub budget
+            log.info("poll_news_start", symbols=len(symbols_list))
+
             # Fetch news per symbol so articles come back tagged with symbols + sentiment
             all_articles = []
-            for symbol in list(all_symbols)[:10]:  # Cap to avoid rate limit
+            for symbol in symbols_list:
                 try:
                     articles = await self.dm.get_news(symbol=symbol, limit=5)
                     all_articles.extend(articles)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("poll_news_symbol_error", symbol=symbol, error=str(e))
 
+            log.info("poll_news_fetched", articles=len(all_articles))
             notifications = process_news_articles(all_articles, all_symbols)
 
             for notif in notifications:
                 await self.dispatcher.dispatch(notif)
+
+            if notifications:
+                log.info("poll_news_dispatched", count=len(notifications))
         except Exception as e:
             log.error("poll_news_error", error=str(e))
 
@@ -160,7 +168,7 @@ class Scheduler:
         elif current_time == "16:15" and now.weekday() < 5:
             await generate_evening_summary(self.ai_engine, self.dm, self.dispatcher)
 
-    @tasks.loop(minutes=30)
+    @tasks.loop(minutes=15)
     async def _generate_proactive_insights(self) -> None:
         """Generate and dispatch proactive insights for users with portfolios."""
         try:
@@ -185,22 +193,27 @@ class Scheduler:
         if cleaned > 0:
             log.debug("cache_cleaned", entries=cleaned)
 
-    # Ensure loops don't start until bot is ready
+    # Ensure loops don't start until bot is ready.
+    # Stagger startups to avoid all pollers hitting Finnhub at t=0.
     @_poll_news.before_loop
     async def _before_poll_news(self) -> None:
         await self.bot.wait_until_ready()
+        # News starts first (highest priority for user)
 
     @_poll_price_alerts.before_loop
     async def _before_poll_alerts(self) -> None:
         await self.bot.wait_until_ready()
+        await asyncio.sleep(15)  # Stagger: start 15s after news
 
     @_poll_analyst.before_loop
     async def _before_poll_analyst(self) -> None:
         await self.bot.wait_until_ready()
+        await asyncio.sleep(30)  # Stagger: start 30s after news
 
     @_poll_macro.before_loop
     async def _before_poll_macro(self) -> None:
         await self.bot.wait_until_ready()
+        await asyncio.sleep(45)  # Stagger: start 45s after news
 
     @_check_briefings.before_loop
     async def _before_check_briefings(self) -> None:
@@ -209,6 +222,7 @@ class Scheduler:
     @_generate_proactive_insights.before_loop
     async def _before_proactive_insights(self) -> None:
         await self.bot.wait_until_ready()
+        await asyncio.sleep(60)  # Stagger: start 60s after news
 
     @_cleanup_cache.before_loop
     async def _before_cleanup_cache(self) -> None:

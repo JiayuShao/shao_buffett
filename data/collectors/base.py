@@ -73,7 +73,7 @@ class BaseCollector(ABC):
                     except Exception:
                         pass
                 raise aiohttp.ClientError("Rate limited")
-            if resp.status in (401, 403):
+            if resp.status in (401, 402, 403):
                 log.warning("non_retryable_http_error", api=self.api_name, status=resp.status, url=url)
                 _CIRCUIT_OPEN[url_path] = time.monotonic() + _CIRCUIT_TTL
                 raise NonRetryableError(resp.status, f"HTTP {resp.status} for {url}")
