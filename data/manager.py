@@ -122,17 +122,17 @@ class DataManager:
         if cached:
             return cached
 
-        # Use FMP for estimates (price targets) — Finnhub price-target is premium-only
-        recs, upgrades, estimates = await asyncio.gather(
+        # Finnhub: recommendations (free). FMP: estimates (free tier).
+        # upgrade-downgrade and price-target are Finnhub premium — skipped.
+        recs, estimates = await asyncio.gather(
             self.finnhub.get_analyst_recommendations(symbol),
-            self.finnhub.get_upgrade_downgrade(symbol),
             self.fmp.get_analyst_estimates(symbol),
             return_exceptions=True,
         )
         data = {
             "recommendations": (recs[:5] if isinstance(recs, list) else []),
             "estimates": (estimates[:3] if isinstance(estimates, list) else []),
-            "upgrades_downgrades": (upgrades[:10] if isinstance(upgrades, list) else []),
+            "upgrades_downgrades": [],
         }
         self.cache.set(key, data, CACHE_TTL["analyst"])
         return data
@@ -293,4 +293,14 @@ class DataManager:
             return cached
         data = await self.fmp.get_historical_price(symbol, limit=limit)
         self.cache.set(key, data, CACHE_TTL["quote"])
+        return data
+
+    async def get_insider_transactions(self, symbol: str) -> dict[str, Any]:
+        """Get insider transactions from Finnhub."""
+        key = f"insider:{symbol}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+        data = await self.finnhub.get_insider_transactions(symbol)
+        self.cache.set(key, data, CACHE_TTL["analyst"])  # 6 hour TTL
         return data

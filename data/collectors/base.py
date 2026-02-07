@@ -1,5 +1,6 @@
-"""Base collector with retry, backoff, and rate limiting."""
+"""Base collector with retry, backoff, circuit breaker, and rate limiting."""
 
+import time
 import aiohttp
 import structlog
 from abc import ABC, abstractmethod
@@ -8,6 +9,10 @@ from data.rate_limiter import RateLimiter
 from utils.retry import async_retry
 
 log = structlog.get_logger(__name__)
+
+# Circuit breaker: skip URLs that returned 403 for 1 hour
+_CIRCUIT_OPEN: dict[str, float] = {}  # url_path -> expiry timestamp
+_CIRCUIT_TTL = 3600.0  # 1 hour
 
 
 class NonRetryableError(Exception):
@@ -47,6 +52,15 @@ class BaseCollector(ABC):
         headers: dict[str, str] | None = None,
     ) -> dict[str, Any] | list[Any]:
         """Make a rate-limited HTTP GET request with retry."""
+        # Circuit breaker: skip URLs known to 403
+        from urllib.parse import urlparse
+        url_path = f"{self.api_name}:{urlparse(url).path}"
+        if url_path in _CIRCUIT_OPEN:
+            if time.monotonic() < _CIRCUIT_OPEN[url_path]:
+                raise NonRetryableError(403, f"Circuit open for {url_path}")
+            else:
+                del _CIRCUIT_OPEN[url_path]
+
         await self.rate_limiter.acquire(self.api_name)
         session = await self.get_session()
 
@@ -59,9 +73,12 @@ class BaseCollector(ABC):
                     except Exception:
                         pass
                 raise aiohttp.ClientError("Rate limited")
-            if resp.status in (401, 403, 404):
+            if resp.status in (401, 403):
                 log.warning("non_retryable_http_error", api=self.api_name, status=resp.status, url=url)
+                _CIRCUIT_OPEN[url_path] = time.monotonic() + _CIRCUIT_TTL
                 raise NonRetryableError(resp.status, f"HTTP {resp.status} for {url}")
+            if resp.status == 404:
+                raise NonRetryableError(resp.status, f"HTTP 404 for {url}")
             resp.raise_for_status()
             return await resp.json()
 

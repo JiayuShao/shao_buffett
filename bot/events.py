@@ -23,6 +23,8 @@ TOOL_LABELS = {
     "get_polymarket": "Checking prediction markets",
     "get_technical_indicators": "Running technicals",
     "generate_chart": "Generating chart",
+    "get_factor_grades": "Computing factor grades",
+    "get_portfolio_health": "Analyzing portfolio health",
     "save_note": "Saving note",
     "get_user_notes": "Reading notes",
     "resolve_action_item": "Resolving action item",

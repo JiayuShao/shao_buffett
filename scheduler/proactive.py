@@ -3,6 +3,7 @@
 import hashlib
 import json
 import structlog
+from datetime import datetime, timedelta
 from typing import Any
 from data.manager import DataManager
 from storage.repositories.portfolio_repo import PortfolioRepository
@@ -24,6 +25,7 @@ POLYMARKET_EXTREME_HIGH = 0.85
 POLYMARKET_EXTREME_LOW = 0.15
 NEWS_STRONG_SENTIMENT = 0.4
 MAX_NEWS_INSIGHTS_PER_USER = 3
+INSIDER_SIGNIFICANT_VALUE = 500_000  # $500K+ insider transactions
 
 # Maps user interests to Polymarket search queries
 INTEREST_POLYMARKET_QUERIES: dict[str, list[str]] = {
@@ -67,10 +69,12 @@ class ProactiveInsightGenerator:
         db_pool: Any,
         data_manager: DataManager,
         dispatcher: NotificationDispatcher,
+        ai_engine: Any | None = None,
     ) -> None:
         self.pool = db_pool
         self.dm = data_manager
         self.dispatcher = dispatcher
+        self.ai_engine = ai_engine
         self.portfolio_repo = PortfolioRepository(db_pool)
         self.notes_repo = NotesRepository(db_pool)
         self.activity_repo = ActivityRepository(db_pool)
@@ -164,6 +168,9 @@ class ProactiveInsightGenerator:
         if all_symbols:
             count += await self._check_price_movements(user_id, all_symbols)
             count += await self._check_upcoming_earnings(user_id, all_symbols)
+            count += await self._check_earnings_calendar_week(user_id, all_symbols)
+            count += await self._check_insider_trades(user_id, all_symbols)
+            count += await self._auto_analyze_recent_earnings(user_id, all_symbols)
             count += await self._suggest_watchlist_additions(user_id, held_symbols)
 
         # Check for stale action items
@@ -182,7 +189,7 @@ class ProactiveInsightGenerator:
         for symbol in symbols:
             try:
                 quote = await self.dm.get_quote(symbol)
-                change_pct = quote.get("dp", quote.get("change_percent", 0))
+                change_pct = quote.get("dp", quote.get("change_percent", quote.get("changesPercentage", 0)))
                 if change_pct is None:
                     continue
                 change_pct = float(change_pct)
@@ -210,10 +217,8 @@ class ProactiveInsightGenerator:
                 earnings = await self.dm.get_earnings(symbol)
                 if not earnings:
                     continue
-                # Check if there's an upcoming earnings date
                 latest = earnings[0] if isinstance(earnings, list) and earnings else None
                 if latest and latest.get("date"):
-                    from datetime import datetime, timedelta
                     try:
                         earn_date = datetime.fromisoformat(str(latest["date"]).replace("Z", "+00:00"))
                         now = datetime.utcnow()
@@ -231,6 +236,203 @@ class ProactiveInsightGenerator:
                         pass
             except Exception as e:
                 log.debug("earnings_check_error", symbol=symbol, error=str(e))
+        return count
+
+    async def _check_earnings_calendar_week(self, user_id: int, symbols: list[str]) -> int:
+        """Generate a weekly earnings calendar alert if multiple holdings report this week."""
+        reporting_this_week = []
+        now = datetime.utcnow()
+
+        for symbol in symbols:
+            try:
+                earnings = await self.dm.get_earnings(symbol)
+                if not earnings or not isinstance(earnings, list):
+                    continue
+                latest = earnings[0]
+                if latest and latest.get("date"):
+                    try:
+                        earn_date = datetime.fromisoformat(str(latest["date"]).replace("Z", "+00:00"))
+                        days_until = (earn_date.replace(tzinfo=None) - now).days
+                        if 0 < days_until <= 7:
+                            day_name = earn_date.strftime("%A")
+                            reporting_this_week.append((symbol, days_until, day_name))
+                    except (ValueError, TypeError):
+                        pass
+            except Exception:
+                pass
+
+        if len(reporting_this_week) >= 2:
+            ch = _content_hash(f"earnings_week_{now.isocalendar()[1]}_{','.join(s[0] for s in reporting_this_week)}")
+            if await self.insight_repo.was_recently_created(user_id, "earnings_calendar", ch):
+                return 0
+
+            lines = [f"- **{sym}** ({day}, {d}d away)" for sym, d, day in sorted(reporting_this_week, key=lambda x: x[1])]
+            content = (
+                f"**{len(reporting_this_week)} of your holdings report earnings this week:**\n"
+                + "\n".join(lines)
+                + "\n\nConsider reviewing your exposure and setting expectations."
+            )
+            await self.insight_repo.create(
+                discord_id=user_id,
+                insight_type="earnings_calendar",
+                title=f"{len(reporting_this_week)} holdings report earnings this week",
+                content=content,
+                symbols=[s[0] for s in reporting_this_week],
+                content_hash=ch,
+            )
+            return 1
+        return 0
+
+    async def _check_insider_trades(self, user_id: int, symbols: list[str]) -> int:
+        """Check for significant insider transactions on held stocks."""
+        count = 0
+        for symbol in symbols[:10]:  # Cap to avoid rate limits
+            try:
+                data = await self.dm.get_insider_transactions(symbol)
+                if not data:
+                    continue
+
+                transactions = data.get("data", []) if isinstance(data, dict) else data
+                if not isinstance(transactions, list):
+                    continue
+
+                for txn in transactions[:5]:
+                    value = abs(float(txn.get("transactionValue", 0) or 0))
+                    if value < INSIDER_SIGNIFICANT_VALUE:
+                        continue
+
+                    name = txn.get("name", "Insider")
+                    txn_type = txn.get("transactionType", "").lower()
+                    shares = txn.get("share", 0)
+                    filing_date = txn.get("filingDate", "")
+
+                    action = "sold" if "sale" in txn_type or "sell" in txn_type else "bought"
+                    ch = _content_hash(f"{symbol}_{name}_{filing_date}_{value}")
+
+                    if await self.insight_repo.was_recently_created(user_id, "insider_trade", ch):
+                        continue
+
+                    content = (
+                        f"**{name}** {action} {abs(shares):,.0f} shares of **{symbol}** "
+                        f"(${value:,.0f}) on {filing_date}."
+                    )
+                    await self.insight_repo.create(
+                        discord_id=user_id,
+                        insight_type="insider_trade",
+                        title=f"{symbol}: {name} {action} ${value:,.0f}",
+                        content=content,
+                        symbols=[symbol],
+                        content_hash=ch,
+                    )
+                    count += 1
+            except Exception as e:
+                log.debug("insider_check_error", symbol=symbol, error=str(e))
+        return count
+
+    async def _auto_analyze_recent_earnings(self, user_id: int, symbols: list[str]) -> int:
+        """Auto-analyze earnings transcripts for holdings that reported in the last 48 hours."""
+        if not self.ai_engine:
+            return 0
+
+        count = 0
+        now = datetime.utcnow()
+
+        for symbol in symbols[:10]:
+            try:
+                earnings = await self.dm.get_earnings(symbol)
+                if not earnings or not isinstance(earnings, list):
+                    continue
+
+                latest = earnings[0]
+                period = latest.get("period") or latest.get("date")
+                quarter = latest.get("quarter")
+                year = latest.get("year")
+                if not period or not quarter or not year:
+                    continue
+
+                # Check if this earnings report dropped in the last 48 hours
+                try:
+                    earn_date = datetime.fromisoformat(str(period).replace("Z", "+00:00"))
+                    hours_since = (now - earn_date.replace(tzinfo=None)).total_seconds() / 3600
+                except (ValueError, TypeError):
+                    continue
+
+                if hours_since < 0 or hours_since > 48:
+                    continue
+
+                # Dedup — only analyze once per earnings period
+                ch = _content_hash(f"earnings_ai_{symbol}_{year}_Q{quarter}")
+                if await self.insight_repo.was_recently_created(user_id, "earnings_analysis", ch):
+                    continue
+
+                # Fetch transcript
+                try:
+                    transcript = await self.dm.get_earnings_transcript(symbol, int(year), int(quarter))
+                except Exception:
+                    transcript = None
+
+                if not transcript or not transcript.get("content"):
+                    # No transcript yet — still create a basic earnings alert with surprise data
+                    actual = latest.get("actual")
+                    estimate = latest.get("estimate")
+                    if actual is not None and estimate is not None:
+                        surprise = ((actual - estimate) / abs(estimate)) * 100 if estimate != 0 else 0
+                        emoji = "beat" if surprise > 0 else "missed"
+                        content = (
+                            f"**{symbol}** just reported Q{quarter} {year} earnings: "
+                            f"EPS ${actual:.2f} vs ${estimate:.2f} est ({emoji} by {abs(surprise):.1f}%). "
+                            f"Transcript not yet available — will analyze when published."
+                        )
+                        await self.insight_repo.create(
+                            discord_id=user_id,
+                            insight_type="earnings_analysis",
+                            title=f"{symbol} Q{quarter} earnings: {emoji} by {abs(surprise):.1f}%",
+                            content=content,
+                            symbols=[symbol],
+                            content_hash=ch,
+                        )
+                        count += 1
+                    continue
+
+                # Use AI to analyze the transcript
+                from ai.prompts.system import TRANSCRIPT_SUMMARY_PROMPT
+                actual = latest.get("actual")
+                estimate = latest.get("estimate")
+                surprise_text = ""
+                if actual is not None and estimate is not None and estimate != 0:
+                    surprise = ((actual - estimate) / abs(estimate)) * 100
+                    surprise_text = f"\nEPS: ${actual:.2f} actual vs ${estimate:.2f} estimate ({surprise:+.1f}% surprise)"
+
+                transcript_text = transcript.get("content", "")[:8000]  # Cap to avoid token limits
+                prompt = (
+                    f"Analyze this Q{quarter} {year} earnings call transcript for {symbol}.{surprise_text}\n\n"
+                    f"Transcript excerpt:\n{transcript_text}\n\n"
+                    f"Provide a concise summary covering: key numbers vs expectations, management tone, "
+                    f"guidance changes, and the single most important takeaway for an investor."
+                )
+
+                try:
+                    analysis = await self.ai_engine.analyze(
+                        prompt=prompt,
+                        force_model="haiku",
+                        system_prompt=TRANSCRIPT_SUMMARY_PROMPT,
+                    )
+                except Exception as e:
+                    log.warning("earnings_ai_analysis_error", symbol=symbol, error=str(e))
+                    continue
+
+                await self.insight_repo.create(
+                    discord_id=user_id,
+                    insight_type="earnings_analysis",
+                    title=f"{symbol} Q{quarter} {year} Earnings Analysis",
+                    content=analysis[:2000],  # Cap for Discord
+                    symbols=[symbol],
+                    content_hash=ch,
+                )
+                count += 1
+
+            except Exception as e:
+                log.debug("earnings_analysis_error", symbol=symbol, error=str(e))
         return count
 
     async def _suggest_watchlist_additions(self, user_id: int, held_symbols: list[str]) -> int:
@@ -258,7 +460,6 @@ class ProactiveInsightGenerator:
         """Remind about old unresolved action items."""
         count = 0
         items = await self.notes_repo.get_active_action_items(user_id)
-        from datetime import datetime, timedelta
         now = datetime.utcnow()
 
         for item in items:
@@ -283,15 +484,12 @@ class ProactiveInsightGenerator:
         count = 0
         queries: list[str] = []
 
-        # Build queries from interests
         for interest in interests:
             queries.extend(INTEREST_POLYMARKET_QUERIES.get(interest, []))
 
-        # Add top watchlist symbols (limit to 5)
         for symbol in symbols[:5]:
             queries.append(symbol)
 
-        # Deduplicate queries
         queries = list(dict.fromkeys(queries))
 
         for query in queries:
@@ -337,11 +535,9 @@ class ProactiveInsightGenerator:
         if volume < POLYMARKET_MIN_VOLUME:
             return False
 
-        # High volume alone is interesting
         if volume >= POLYMARKET_HIGH_VOLUME:
             return True
 
-        # Otherwise require extreme probability
         try:
             prices = json.loads(market.get("outcome_prices", "[]"))
             for p in prices:
@@ -374,7 +570,6 @@ class ProactiveInsightGenerator:
         count = 0
         tracked_symbols = set(symbols)
 
-        # Collect articles from pre-fetched cache
         seen_urls: set[str] = set()
         candidates: list[dict] = []
 
@@ -394,12 +589,10 @@ class ProactiveInsightGenerator:
             if count >= MAX_NEWS_INSIGHTS_PER_USER:
                 break
 
-            # Skip weak sentiment
             sentiment = article.get("sentiment")
             if sentiment is None or abs(sentiment) < NEWS_STRONG_SENTIMENT:
                 continue
 
-            # Skip if article only mentions symbols already tracked by price_movements
             article_symbols = set(article.get("symbols", []))
             if article_symbols and article_symbols.issubset(tracked_symbols):
                 continue

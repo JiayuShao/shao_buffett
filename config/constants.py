@@ -21,7 +21,7 @@ class EmbedColor(int, Enum):
 
 # Rate limits per API (requests per minute)
 API_RATE_LIMITS = {
-    "finnhub": 5,         # 3000/month ≈ 100/day — keep headroom for user queries
+    "finnhub": 30,        # Free tier allows 60/min — keep headroom for bursts
     "fred": 120,
     "marketaux": 2,       # 100/day ≈ ~2/min conservative
     "fmp": 30,

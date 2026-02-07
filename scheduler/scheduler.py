@@ -68,15 +68,23 @@ class Scheduler:
 
     @tasks.loop(seconds=NEWS_POLL_INTERVAL)
     async def _poll_news(self) -> None:
-        """Poll for new financial news."""
+        """Poll for new financial news per watchlist symbol."""
         try:
             watchlist_repo = WatchlistRepository(self.bot.db_pool)
             all_symbols = await watchlist_repo.get_all_symbols()
             if not all_symbols:
                 return
 
-            articles = await self.dm.get_news(limit=20)
-            notifications = process_news_articles(articles, all_symbols)
+            # Fetch news per symbol so articles come back tagged with symbols + sentiment
+            all_articles = []
+            for symbol in list(all_symbols)[:10]:  # Cap to avoid rate limit
+                try:
+                    articles = await self.dm.get_news(symbol=symbol, limit=5)
+                    all_articles.extend(articles)
+                except Exception:
+                    pass
+
+            notifications = process_news_articles(all_articles, all_symbols)
 
             for notif in notifications:
                 await self.dispatcher.dispatch(notif)
@@ -161,6 +169,7 @@ class Scheduler:
                 db_pool=self.bot.db_pool,
                 data_manager=self.dm,
                 dispatcher=self.dispatcher,
+                ai_engine=self.ai_engine,
             )
             created = await generator.generate_all()
             if created > 0:

@@ -11,6 +11,83 @@ from config.constants import NotificationType
 
 log = structlog.get_logger(__name__)
 
+# Structured briefing prompt with clear sections
+PERSONALIZED_BRIEFING_PROMPT = """Generate a personalized morning market briefing for a user who holds: {symbols}.
+
+Use your tools to fetch:
+1. Current quotes for their holdings (flag any >3% moves)
+2. get_factor_grades for the user's largest 3 holdings (show Quant Rating)
+3. Latest news relevant to their positions
+4. Any analyst actions on their stocks
+5. Key macro indicators (VIX, 10Y yield)
+6. Sector performance
+
+Structure the briefing with these EXACT sections:
+
+## Market Pulse
+Key index levels. Risk-on or risk-off? VIX level.
+
+## Your Portfolio
+For each holding: price, daily change, any notable news. Flag the biggest movers with arrows.
+
+## Quant Snapshot
+Show factor grades and Quant Rating for their top 3 holdings. Flag any Sell-rated positions.
+
+## Earnings Calendar
+List any holdings reporting earnings in the next 7 days. Include date and key metrics to watch.
+
+## News & Catalysts
+Top 3-5 most relevant stories for their holdings. Include sentiment.
+
+## Analyst Actions
+Any upgrades, downgrades, or price target changes for portfolio/watchlist stocks.
+
+## Macro Backdrop
+Key macro data points that affect their holdings.
+
+## Action Items
+Specific things to pay attention to today based on all the above.{concern_text}{interests_text}
+
+Use emojis for quick visual parsing (🟢 up, 🔴 down, ⚠️ alert, 📊 data, 📅 calendar).
+Keep it concise but comprehensive — this replaces reading 10 different sources.
+"""
+
+WATCHLIST_BRIEFING_PROMPT = """Generate a personalized morning market briefing for a user watching: {symbols}.
+
+Use your tools to fetch:
+1. Current quotes for their watchlist stocks (flag any >3% moves)
+2. get_factor_grades for the top 3 watchlist stocks (show Quant Rating)
+3. Latest news relevant to their watchlist
+4. Any analyst actions on their watched stocks
+5. Key macro indicators (VIX, 10Y yield)
+6. Sector performance
+
+Structure the briefing with these EXACT sections:
+
+## Market Pulse
+Key index levels. Risk-on or risk-off? VIX level.
+
+## Watchlist Movers
+For each watched stock: price, daily change. Flag significant moves with arrows.
+
+## Quant Snapshot
+Show factor grades and Quant Rating for top 3 watchlist stocks. Highlight any Strong Buy or Strong Sell.
+
+## Earnings Calendar
+List any watchlist stocks reporting earnings in the next 7 days.
+
+## News & Catalysts
+Top 3-5 most relevant stories for their watchlist. Include sentiment.
+
+## Analyst Actions
+Any upgrades, downgrades, or price target changes.
+
+## Macro Backdrop
+Key macro indicators affecting their watched sectors.{concern_text}{interests_text}
+
+Use emojis for quick visual parsing (🟢 up, 🔴 down, ⚠️ alert, 📊 data, 📅 calendar).
+"""
+
 
 async def generate_morning_briefing(
     ai_engine: AIEngine,
@@ -22,7 +99,6 @@ async def generate_morning_briefing(
 
     personalized_users: set[int] = set()
 
-    # Try to generate personalized briefings for users with portfolios
     try:
         from storage.repositories.portfolio_repo import PortfolioRepository
         from storage.repositories.notes_repo import NotesRepository
@@ -44,7 +120,6 @@ async def generate_morning_briefing(
             except Exception as e:
                 log.error("personalized_briefing_error", user_id=user_id, error=str(e))
 
-        # Generate watchlist-personalized briefings for users without portfolios
         users_with_watchlist = await watchlist_repo.get_all_users_with_watchlist()
         for user_id in users_with_watchlist:
             if user_id in personalized_users:
@@ -60,7 +135,6 @@ async def generate_morning_briefing(
     except Exception as e:
         log.debug("personalized_briefing_setup_error", error=str(e))
 
-    # Generic briefing only if no personalized briefings were generated
     if not personalized_users:
         await _generate_generic_briefing(ai_engine, dispatcher)
 
@@ -90,16 +164,10 @@ async def _generate_personalized_briefing(
     interests_text = await _get_interests_text(user_id, user_repo)
 
     symbols_str = ", ".join(symbols[:15])
-    prompt = (
-        f"Generate a personalized morning market briefing for a user who holds: {symbols_str}.\n\n"
-        f"Use your tools to fetch:\n"
-        f"1. Current quotes for their holdings\n"
-        f"2. Latest news relevant to their positions\n"
-        f"3. Any analyst actions on their stocks\n"
-        f"4. Key macro indicators (VIX, 10Y yield)\n"
-        f"5. Sector performance\n\n"
-        f"Prioritize their holdings in the briefing. Flag any significant moves.{concern_text}{interests_text}\n\n"
-        f"Format as a scannable morning briefing with emojis for quick visual parsing."
+    prompt = PERSONALIZED_BRIEFING_PROMPT.format(
+        symbols=symbols_str,
+        concern_text=concern_text,
+        interests_text=interests_text,
     )
 
     briefing = await ai_engine.analyze(
@@ -143,17 +211,10 @@ async def _generate_watchlist_briefing(
     interests_text = await _get_interests_text(user_id, user_repo)
 
     symbols_str = ", ".join(symbols[:15])
-    prompt = (
-        f"Generate a personalized morning market briefing for a user who is watching: {symbols_str}.\n\n"
-        f"Use your tools to fetch:\n"
-        f"1. Current quotes for their watchlist stocks\n"
-        f"2. Latest news relevant to their watchlist\n"
-        f"3. Any analyst actions on their watched stocks\n"
-        f"4. Key macro indicators (VIX, 10Y yield)\n"
-        f"5. Sector performance\n\n"
-        f"Prioritize their watchlist stocks in the briefing. Flag any significant moves (>3%), "
-        f"upcoming earnings, or analyst upgrades/downgrades.{concern_text}{interests_text}\n\n"
-        f"Format as a scannable morning briefing with emojis for quick visual parsing."
+    prompt = WATCHLIST_BRIEFING_PROMPT.format(
+        symbols=symbols_str,
+        concern_text=concern_text,
+        interests_text=interests_text,
     )
 
     briefing = await ai_engine.analyze(
