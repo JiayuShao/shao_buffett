@@ -8,8 +8,8 @@ class TestToolDefinitions:
     """Verify all tool definitions are well-formed."""
 
     def test_tool_count(self):
-        """Should have 20 tools total (12 financial + polymarket + 3 notes + 4 portfolio)."""
-        assert len(FINANCIAL_TOOLS) == 20
+        """Should have 21 tools total (12 financial + polymarket + technicals + 3 notes + 4 portfolio)."""
+        assert len(FINANCIAL_TOOLS) == 21
 
     def test_all_tools_have_required_fields(self):
         for tool in FINANCIAL_TOOLS:

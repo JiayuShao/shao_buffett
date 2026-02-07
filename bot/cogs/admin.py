@@ -18,7 +18,7 @@ class AdminCog(commands.Cog):
         await ctx.defer()
 
         embed = make_embed(
-            "Buffet Shao — System Status",
+            "Shao Buffett — System Status",
             "",
             color=EmbedColor.INFO,
         )
@@ -53,6 +53,19 @@ class AdminCog(commands.Cog):
                 embed.add_field(name="APIs", value="\n".join(api_lines), inline=False)
             except Exception:
                 embed.add_field(name="APIs", value="⚠️ Health check failed", inline=False)
+
+            # Rate limit usage
+            try:
+                usage = self.bot.data_manager.rate_limiter.get_usage()
+                if usage:
+                    usage_lines = []
+                    for api, info in sorted(usage.items()):
+                        pct = (info["used"] / info["limit"] * 100) if info["limit"] > 0 else 0
+                        bar = "🟢" if pct < 80 else ("🟡" if pct < 100 else "🔴")
+                        usage_lines.append(f"{bar} {api}: {info['used']}/{info['limit']}")
+                    embed.add_field(name="Rate Limits (req/min)", value="\n".join(usage_lines), inline=False)
+            except Exception:
+                pass
 
         await ctx.respond(embed=embed)
 

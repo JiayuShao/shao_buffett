@@ -23,7 +23,7 @@ class BaseCollector(ABC):
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=30),
-                headers={"User-Agent": "BuffetShao/0.1 (Financial Agent)"},
+                headers={"User-Agent": "ShaoBuffett/0.1 (Financial Agent)"},
             )
         return self._session
 
@@ -44,7 +44,13 @@ class BaseCollector(ABC):
 
         async with session.get(url, params=params, headers=headers) as resp:
             if resp.status == 429:
-                log.warning("rate_limited", api=self.api_name, url=url)
+                log.warning("rate_limited_by_server", api=self.api_name, url=url)
+                # Notify about server-side rate limit
+                if self.rate_limiter.on_rate_limit:
+                    try:
+                        await self.rate_limiter.on_rate_limit(self.api_name, 0.0)
+                    except Exception:
+                        pass
                 raise aiohttp.ClientError("Rate limited")
             resp.raise_for_status()
             return await resp.json()

@@ -94,8 +94,15 @@ class FMPCollector(BaseCollector):
 
     async def get_sector_performance(self) -> list[dict[str, Any]]:
         """Get sector performance data."""
+        # Try the v3 sectors-performance endpoint (available on free tier)
         data = await self._request(
-            f"{BASE_URL}/sector-performance", params=self._params()
+            f"{BASE_URL}/sectors-performance", params=self._params()
+        )
+        if isinstance(data, list) and data:
+            return data
+        # Fallback to stock_market endpoint
+        data = await self._request(
+            f"{BASE_URL}/stock_market/sectors-performance", params=self._params()
         )
         return data if isinstance(data, list) else []
 
@@ -115,4 +122,27 @@ class FMPCollector(BaseCollector):
         )
         if isinstance(data, list) and data:
             return data[0].get("peersList", [])
+        return []
+
+    async def get_technical_indicator(
+        self, symbol: str, indicator_type: str, period: int = 14, limit: int = 1
+    ) -> list[dict[str, Any]]:
+        """Get a technical indicator (sma, ema, rsi) for a symbol."""
+        data = await self._request(
+            f"{BASE_URL}/technical_indicator/daily/{symbol}",
+            params=self._params(type=indicator_type, period=period),
+        )
+        if isinstance(data, list):
+            return data[:limit]
+        return []
+
+    async def get_historical_price(self, symbol: str, limit: int = 90) -> list[dict[str, Any]]:
+        """Get historical daily price data (OHLCV)."""
+        data = await self._request(
+            f"{BASE_URL}/historical-price-full/{symbol}",
+            params=self._params(),
+        )
+        if isinstance(data, dict):
+            historical = data.get("historical", [])
+            return historical[:limit]
         return []

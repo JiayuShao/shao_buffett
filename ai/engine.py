@@ -4,7 +4,7 @@ import json
 import asyncpg
 import anthropic
 import structlog
-from typing import Any
+from typing import Any, Callable, Awaitable
 from ai.models import ModelConfig, OPUS
 from ai.router import route_request, record_opus_call
 from ai.tools import FINANCIAL_TOOLS
@@ -43,6 +43,9 @@ class AIEngine:
 
         Returns the final text response.
         """
+        # Summarize old messages if conversation is getting long
+        await self.conversation.summarize_if_needed(user_id, channel_id, self)
+
         # Build user context
         profile = await self.conversation.get_user_profile(user_id)
         watchlist = await self.conversation.get_user_watchlist(user_id)
@@ -70,6 +73,10 @@ class AIEngine:
                 sys_prompt += f"\nUser's focused metrics: {', '.join(metrics)}"
         if profile.get("risk_tolerance"):
             sys_prompt += f"\nUser's risk tolerance: {profile['risk_tolerance']}"
+        if profile.get("interests"):
+            interests = profile["interests"]
+            if isinstance(interests, dict) and interests.get("sectors"):
+                sys_prompt += f"\nUser's sector interests: {', '.join(interests['sectors'])}"
 
         # Inject conversation notes for cross-conversation memory
         sys_prompt = await self._inject_user_context(user_id, sys_prompt)
@@ -134,23 +141,191 @@ class AIEngine:
             messages=messages,
         )
 
+    async def chat_stream(
+        self,
+        user_id: int,
+        channel_id: int,
+        content: str,
+        attachments: list[Any] | None = None,
+        on_tool_start: Callable[[str, dict], Awaitable[None]] | None = None,
+        on_text_chunk: Callable[[str], Awaitable[None]] | None = None,
+        send_file: Callable | None = None,
+    ) -> str:
+        """Handle a chat message with streaming final response and tool progress.
+
+        Same setup as chat() but uses _run_tool_loop_stream() for real-time feedback.
+        """
+        await self.conversation.summarize_if_needed(user_id, channel_id, self)
+
+        profile = await self.conversation.get_user_profile(user_id)
+        watchlist = await self.conversation.get_user_watchlist(user_id)
+        history = await self.conversation.get_history(user_id, channel_id)
+
+        has_portfolio = False
+        try:
+            from storage.repositories.portfolio_repo import PortfolioRepository
+            portfolio_repo = PortfolioRepository(self.db_pool)
+            portfolio_symbols = await portfolio_repo.get_symbols(user_id)
+            has_portfolio = len(portfolio_symbols) > 0
+        except Exception:
+            pass
+
+        model_config = route_request(content, has_portfolio=has_portfolio)
+
+        sys_prompt = BASE_SYSTEM_PROMPT
+        if watchlist:
+            sys_prompt += f"\n\nUser's watchlist: {', '.join(watchlist)}"
+        if profile.get("focused_metrics"):
+            metrics = profile["focused_metrics"]
+            if isinstance(metrics, list):
+                sys_prompt += f"\nUser's focused metrics: {', '.join(metrics)}"
+        if profile.get("risk_tolerance"):
+            sys_prompt += f"\nUser's risk tolerance: {profile['risk_tolerance']}"
+        if profile.get("interests"):
+            interests = profile["interests"]
+            if isinstance(interests, dict) and interests.get("sectors"):
+                sys_prompt += f"\nUser's sector interests: {', '.join(interests['sectors'])}"
+
+        sys_prompt = await self._inject_user_context(user_id, sys_prompt)
+
+        messages: list[dict[str, Any]] = []
+        for msg in history[-10:]:
+            messages.append(msg)
+
+        user_content: list[dict[str, Any]] | str
+        if attachments:
+            user_content = [{"type": "text", "text": content}]
+            attachment_blocks = await process_attachments(attachments)
+            user_content.extend(attachment_blocks)
+        else:
+            user_content = content
+
+        messages.append({"role": "user", "content": user_content})
+        await self.conversation.save_message(user_id, channel_id, "user", content)
+
+        response_text = await self._run_tool_loop_stream(
+            model_config=model_config,
+            system_prompt=sys_prompt,
+            messages=messages,
+            user_id=user_id,
+            on_tool_start=on_tool_start,
+            on_text_chunk=on_text_chunk,
+            send_file=send_file,
+        )
+
+        if model_config == OPUS:
+            record_opus_call()
+
+        await self.conversation.save_message(
+            user_id, channel_id, "assistant", response_text, model_config.model_id
+        )
+        await self._log_activity(user_id, content)
+
+        return response_text
+
+    async def _run_tool_loop_stream(
+        self,
+        model_config: ModelConfig,
+        system_prompt: str,
+        messages: list[dict[str, Any]],
+        user_id: int | None = None,
+        on_tool_start: Callable[[str, dict], Awaitable[None]] | None = None,
+        on_text_chunk: Callable[[str], Awaitable[None]] | None = None,
+        send_file: Callable | None = None,
+    ) -> str:
+        """Tool-use loop with streaming on the final text generation round."""
+        system_blocks = [
+            {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+        ]
+        cached_tools = list(FINANCIAL_TOOLS)
+        cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
+
+        for round_num in range(MAX_TOOL_ROUNDS):
+            try:
+                create_params: dict[str, Any] = {
+                    "model": model_config.model_id,
+                    "max_tokens": model_config.max_tokens + (model_config.thinking_budget or 0),
+                    "system": system_blocks,
+                    "messages": messages,
+                    "tools": cached_tools,
+                }
+                if model_config.thinking_budget:
+                    create_params["thinking"] = {
+                        "type": "enabled",
+                        "budget_tokens": model_config.thinking_budget,
+                    }
+
+                # Non-streaming call first to check if tools are needed
+                response = await self.client.messages.create(**create_params)
+
+            except anthropic.APIError as e:
+                log.error("anthropic_api_error", error=str(e), model=model_config.model_id)
+                return f"Sorry, I encountered an API error: {e.message}"
+
+            if response.stop_reason == "tool_use":
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        if on_tool_start:
+                            await on_tool_start(block.name, block.input)
+                        result = await self._execute_tool(
+                            block.name, block.input, user_id=user_id, send_file=send_file,
+                        )
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps(result, default=str),
+                        })
+                messages.append({"role": "assistant", "content": response.content})
+                messages.append({"role": "user", "content": tool_results})
+            else:
+                # Final text round — stream it if we have a callback
+                text_parts = [
+                    block.text for block in response.content if block.type == "text"
+                ]
+                final_text = "\n".join(text_parts) if text_parts else "I wasn't able to generate a response."
+
+                if on_text_chunk:
+                    # Send the final text in chunks to simulate streaming
+                    # (We already have the complete response from the non-streaming call)
+                    await on_text_chunk(final_text)
+
+                return final_text
+
+        return "I reached the maximum number of analysis steps. Here's what I found so far."
+
     async def _run_tool_loop(
         self,
         model_config: ModelConfig,
         system_prompt: str,
         messages: list[dict[str, Any]],
         user_id: int | None = None,
+        send_file: Any = None,
     ) -> str:
         """Execute the agentic tool-use loop until the model stops calling tools."""
+        # Prompt caching: wrap system prompt and mark last tool for caching
+        system_blocks = [
+            {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+        ]
+        cached_tools = list(FINANCIAL_TOOLS)
+        cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
+
         for round_num in range(MAX_TOOL_ROUNDS):
             try:
-                response = await self.client.messages.create(
-                    model=model_config.model_id,
-                    max_tokens=model_config.max_tokens,
-                    system=system_prompt,
-                    messages=messages,
-                    tools=FINANCIAL_TOOLS,
-                )
+                create_params: dict[str, Any] = {
+                    "model": model_config.model_id,
+                    "max_tokens": model_config.max_tokens + (model_config.thinking_budget or 0),
+                    "system": system_blocks,
+                    "messages": messages,
+                    "tools": cached_tools,
+                }
+                # Extended thinking for Sonnet/Opus
+                if model_config.thinking_budget:
+                    create_params["thinking"] = {
+                        "type": "enabled",
+                        "budget_tokens": model_config.thinking_budget,
+                    }
+                response = await self.client.messages.create(**create_params)
             except anthropic.APIError as e:
                 log.error("anthropic_api_error", error=str(e), model=model_config.model_id)
                 return f"Sorry, I encountered an API error: {e.message}"
@@ -161,7 +336,9 @@ class AIEngine:
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
-                        result = await self._execute_tool(block.name, block.input, user_id=user_id)
+                        result = await self._execute_tool(
+                            block.name, block.input, user_id=user_id, send_file=send_file,
+                        )
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -172,9 +349,10 @@ class AIEngine:
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": tool_results})
             else:
-                # Model is done — extract text response
+                # Model is done — extract text response (filter thinking blocks)
                 text_parts = [
-                    block.text for block in response.content if hasattr(block, "text")
+                    block.text for block in response.content
+                    if block.type == "text"
                 ]
                 return "\n".join(text_parts) if text_parts else "I wasn't able to generate a response."
 
@@ -272,7 +450,7 @@ class AIEngine:
 
         return sys_prompt
 
-    async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int | None = None) -> Any:
+    async def _execute_tool(self, tool_name: str, tool_input: dict[str, Any], user_id: int | None = None, send_file: Any = None) -> Any:
         """Execute a financial data tool and return the result."""
         log.info("tool_call", tool=tool_name, input=tool_input)
 
@@ -320,9 +498,22 @@ class AIEngine:
                         query=tool_input["query"],
                         limit=tool_input.get("limit", 5),
                     )
+                case "get_technical_indicators":
+                    return await self.data_manager.get_technical_indicators(tool_input["symbol"])
                 case "generate_chart":
-                    # Chart generation is handled separately — return a placeholder
-                    return {"status": "chart_requested", "params": tool_input}
+                    if not send_file:
+                        return {"status": "charts unavailable in this context"}
+                    from dashboard.generator import DashboardGenerator
+                    generator = DashboardGenerator(self.data_manager)
+                    files = await generator.generate_chart(
+                        chart_type=tool_input["chart_type"],
+                        symbols=tool_input.get("symbols"),
+                        series_id=tool_input.get("series_id"),
+                        title=tool_input.get("title"),
+                    )
+                    for f in files:
+                        await send_file(f)
+                    return {"status": "chart_sent", "chart_type": tool_input["chart_type"]}
 
                 # --- Personal Analyst Tools ---
                 case "save_note":

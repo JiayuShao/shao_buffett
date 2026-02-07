@@ -1046,7 +1046,7 @@ class TestChatCog:
         from bot.cogs.chat import ChatCog
         bot = make_bot()
         bot.ai_engine = MagicMock()
-        bot.ai_engine.chat = AsyncMock(return_value="Here's my analysis...")
+        bot.ai_engine.chat_stream = AsyncMock(return_value="Here's my analysis...")
         bot.ai_engine.conversation = MagicMock()
         bot.ai_engine.conversation.clear_history = AsyncMock(return_value=5)
         return ChatCog(bot)
@@ -1054,15 +1054,21 @@ class TestChatCog:
     @pytest.mark.asyncio
     async def test_ask(self, cog):
         ctx = make_ctx()
+        # Mock the interaction flow: ctx.respond returns an interaction with original_response
+        mock_msg = AsyncMock()
+        mock_interaction = AsyncMock()
+        mock_interaction.original_response = AsyncMock(return_value=mock_msg)
+        ctx.respond = AsyncMock(return_value=mock_interaction)
+        ctx.channel = MagicMock()
+        ctx.channel.send = AsyncMock()
+
         await cog.ask.callback(cog, ctx, "What do you think about AAPL?")
 
         ctx.defer.assert_called_once()
-        cog.bot.ai_engine.chat.assert_called_once_with(
-            user_id=ctx.author.id,
-            channel_id=ctx.channel_id,
-            content="What do you think about AAPL?",
-        )
-        ctx.respond.assert_called_once()
+        cog.bot.ai_engine.chat_stream.assert_called_once()
+        call_kwargs = cog.bot.ai_engine.chat_stream.call_args[1]
+        assert call_kwargs["user_id"] == ctx.author.id
+        assert call_kwargs["content"] == "What do you think about AAPL?"
 
     @pytest.mark.asyncio
     async def test_ask_no_engine(self, cog):
@@ -1075,12 +1081,18 @@ class TestChatCog:
 
     @pytest.mark.asyncio
     async def test_ask_error(self, cog):
-        cog.bot.ai_engine.chat = AsyncMock(side_effect=Exception("API failed"))
+        mock_msg = AsyncMock()
+        mock_interaction = AsyncMock()
+        mock_interaction.original_response = AsyncMock(return_value=mock_msg)
         ctx = make_ctx()
+        ctx.respond = AsyncMock(return_value=mock_interaction)
+        ctx.channel = MagicMock()
+        ctx.channel.send = AsyncMock()
+        cog.bot.ai_engine.chat_stream = AsyncMock(side_effect=Exception("API failed"))
 
         await cog.ask.callback(cog, ctx, "test")
 
-        assert ctx.respond.call_args[1].get("ephemeral") is True
+        mock_msg.edit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_clear_chat(self, cog):

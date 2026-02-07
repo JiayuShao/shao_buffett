@@ -1,6 +1,7 @@
 """Plotly chart builders for financial data."""
 
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from typing import Any
 
 
@@ -165,5 +166,57 @@ def macro_trend_chart(
         width=700,
         margin=dict(l=50, r=30, t=50, b=40),
     )
+
+    return fig
+
+
+def price_chart(
+    symbol: str,
+    price_data: list[dict[str, Any]],
+    title: str | None = None,
+) -> go.Figure:
+    """Create a candlestick price chart with volume bars."""
+    # Price data from FMP comes newest-first, reverse for chronological order
+    data = list(reversed(price_data))
+
+    dates = [d.get("date", "") for d in data]
+    opens = [d.get("open", 0) for d in data]
+    highs = [d.get("high", 0) for d in data]
+    lows = [d.get("low", 0) for d in data]
+    closes = [d.get("close", 0) for d in data]
+    volumes = [d.get("volume", 0) for d in data]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.75, 0.25], vertical_spacing=0.03,
+    )
+
+    fig.add_trace(go.Candlestick(
+        x=dates, open=opens, high=highs, low=lows, close=closes,
+        name="Price",
+        increasing_line_color="#00C853",
+        decreasing_line_color="#FF1744",
+    ), row=1, col=1)
+
+    vol_colors = [
+        "#00C853" if closes[i] >= opens[i] else "#FF1744"
+        for i in range(len(data))
+    ]
+    fig.add_trace(go.Bar(
+        x=dates, y=volumes, name="Volume",
+        marker_color=vol_colors, opacity=0.5,
+    ), row=2, col=1)
+
+    fig.update_layout(
+        title=title or f"{symbol} — Price Chart",
+        template="plotly_dark",
+        height=500,
+        width=800,
+        margin=dict(l=50, r=30, t=50, b=40),
+        xaxis_rangeslider_visible=False,
+        showlegend=False,
+    )
+    fig.update_yaxes(title_text="Price ($)", row=1, col=1)
+    fig.update_yaxes(title_text="Volume", row=2, col=1)
 
     return fig

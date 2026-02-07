@@ -10,6 +10,7 @@ class ModelConfig:
     max_tokens: int
     cost_per_1k_input: float   # USD
     cost_per_1k_output: float  # USD
+    thinking_budget: int | None = None  # Token budget for extended thinking
 
 
 HAIKU = ModelConfig(
@@ -18,6 +19,7 @@ HAIKU = ModelConfig(
     max_tokens=4096,
     cost_per_1k_input=0.001,
     cost_per_1k_output=0.005,
+    thinking_budget=None,
 )
 
 SONNET = ModelConfig(
@@ -26,6 +28,7 @@ SONNET = ModelConfig(
     max_tokens=8192,
     cost_per_1k_input=0.003,
     cost_per_1k_output=0.015,
+    thinking_budget=10000,
 )
 
 OPUS = ModelConfig(
@@ -34,6 +37,7 @@ OPUS = ModelConfig(
     max_tokens=8192,
     cost_per_1k_input=0.015,
     cost_per_1k_output=0.075,
+    thinking_budget=16000,
 )
 
 # Model tiers for routing

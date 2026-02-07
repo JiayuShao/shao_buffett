@@ -1,5 +1,6 @@
 """Data manager — orchestrates collectors and cache."""
 
+import asyncio
 from typing import Any
 import structlog
 from data.cache import TTLCache
@@ -214,6 +215,18 @@ class DataManager:
             return await self.arxiv.search_papers(query=query, max_results=max_results)
         return await self.arxiv.get_recent_papers(max_results=max_results)
 
+    async def get_news_for_sectors(
+        self, sectors: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Get news filtered by MarketAux industry sectors."""
+        key = f"news:sectors:{sectors}:{limit}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+        data = await self.marketaux.get_news(sectors=sectors, limit=limit)
+        self.cache.set(key, data, CACHE_TTL["news"])
+        return data
+
     async def get_polymarket(
         self, query: str, limit: int = 5
     ) -> list[dict[str, Any]]:
@@ -224,4 +237,49 @@ class DataManager:
             return cached
         data = await self.polymarket.search_markets(query, limit=limit)
         self.cache.set(key, data, CACHE_TTL["news"])  # Same TTL as news (5 min)
+        return data
+
+    async def get_technical_indicators(self, symbol: str) -> dict[str, Any]:
+        """Get technical analysis indicators: SMA, RSI, EMA, MACD."""
+        key = f"technicals:{symbol}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+
+        # Fetch all indicators in parallel
+        sma_20, sma_50, sma_200, rsi_14, ema_12, ema_26 = await asyncio.gather(
+            self.fmp.get_technical_indicator(symbol, "sma", period=20),
+            self.fmp.get_technical_indicator(symbol, "sma", period=50),
+            self.fmp.get_technical_indicator(symbol, "sma", period=200),
+            self.fmp.get_technical_indicator(symbol, "rsi", period=14),
+            self.fmp.get_technical_indicator(symbol, "ema", period=12),
+            self.fmp.get_technical_indicator(symbol, "ema", period=26),
+        )
+
+        # Compute MACD from EMA-12 and EMA-26
+        ema12_val = ema_12[0].get("ema") if ema_12 else None
+        ema26_val = ema_26[0].get("ema") if ema_26 else None
+        macd = (ema12_val - ema26_val) if ema12_val is not None and ema26_val is not None else None
+
+        data = {
+            "symbol": symbol,
+            "sma_20": sma_20[0].get("sma") if sma_20 else None,
+            "sma_50": sma_50[0].get("sma") if sma_50 else None,
+            "sma_200": sma_200[0].get("sma") if sma_200 else None,
+            "rsi_14": rsi_14[0].get("rsi") if rsi_14 else None,
+            "ema_12": ema12_val,
+            "ema_26": ema26_val,
+            "macd": macd,
+        }
+        self.cache.set(key, data, CACHE_TTL["macro"])  # 30 min TTL
+        return data
+
+    async def get_historical_prices(self, symbol: str, limit: int = 90) -> list[dict[str, Any]]:
+        """Get historical daily OHLCV data."""
+        key = f"hist_prices:{symbol}:{limit}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+        data = await self.fmp.get_historical_price(symbol, limit=limit)
+        self.cache.set(key, data, CACHE_TTL["quote"])
         return data

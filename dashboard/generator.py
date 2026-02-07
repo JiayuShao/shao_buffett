@@ -4,7 +4,7 @@ import discord
 import structlog
 from typing import Any
 from data.manager import DataManager
-from dashboard.charts import comparison_chart, sector_heatmap, earnings_chart, macro_trend_chart
+from dashboard.charts import comparison_chart, sector_heatmap, earnings_chart, macro_trend_chart, price_chart
 from dashboard.renderer import render_to_discord_file
 
 log = structlog.get_logger(__name__)
@@ -83,6 +83,18 @@ class DashboardGenerator:
 
         return files
 
+    async def generate_price_chart(self, symbol: str, title: str | None = None) -> list[discord.File]:
+        """Generate a candlestick price chart for a symbol."""
+        files = []
+        try:
+            prices = await self.dm.get_historical_prices(symbol, limit=90)
+            if prices:
+                fig = price_chart(symbol, prices, title)
+                files.append(render_to_discord_file(fig, f"{symbol}_price.png"))
+        except Exception as e:
+            log.error("price_chart_error", symbol=symbol, error=str(e))
+        return files
+
     async def generate_chart(
         self, chart_type: str, **kwargs: Any
     ) -> list[discord.File]:
@@ -99,5 +111,9 @@ class DashboardGenerator:
             case "macro_trend":
                 series_id = kwargs.get("series_id", "GDP")
                 return await self.generate_macro_dashboard(series_id, kwargs.get("title", series_id))
+            case "price_chart":
+                symbols = kwargs.get("symbols", ["AAPL"])
+                symbol = symbols[0] if symbols else "AAPL"
+                return await self.generate_price_chart(symbol, kwargs.get("title"))
             case _:
                 return []

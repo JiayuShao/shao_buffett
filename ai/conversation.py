@@ -98,3 +98,67 @@ class ConversationManager:
             )
         count = int(result.split()[-1])
         return count
+
+    async def summarize_if_needed(self, user_id: int, channel_id: int, ai_engine: Any) -> None:
+        """Summarize old messages when conversation exceeds 15 messages.
+
+        Keeps the most recent 10 messages intact and compresses the rest
+        into a summary stored as a special message.
+        """
+        async with self._pool.acquire() as conn:
+            count = await conn.fetchval(
+                "SELECT COUNT(*) FROM conversations WHERE discord_id = $1 AND channel_id = $2",
+                user_id, channel_id,
+            )
+            if count is None or count <= 15:
+                return
+
+            # Get all messages ordered chronologically
+            all_rows = await conn.fetch(
+                """
+                SELECT id, role, content, is_summary FROM conversations
+                WHERE discord_id = $1 AND channel_id = $2
+                ORDER BY created_at ASC
+                """,
+                user_id, channel_id,
+            )
+
+        # Keep the most recent 10, summarize the rest
+        to_summarize = all_rows[:-10]
+        if not to_summarize:
+            return
+
+        # Build text from old messages (skip existing summaries' meta, include their content)
+        text_parts = []
+        for row in to_summarize:
+            text_parts.append(f"{row['role']}: {row['content']}")
+        text = "\n".join(text_parts)
+
+        try:
+            summary = await ai_engine.analyze(
+                prompt=(
+                    "Summarize this conversation in 2-3 sentences, focusing on key topics, "
+                    "decisions, and any stocks/positions discussed:\n\n" + text
+                ),
+                force_model="haiku",
+            )
+        except Exception as e:
+            log.warning("summarization_failed", error=str(e))
+            return
+
+        # Delete old messages and insert summary
+        ids_to_delete = [row["id"] for row in to_summarize]
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "DELETE FROM conversations WHERE id = ANY($1::int[])",
+                    ids_to_delete,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO conversations (discord_id, channel_id, role, content, is_summary)
+                    VALUES ($1, $2, 'system', $3, TRUE)
+                    """,
+                    user_id, channel_id,
+                    f"[Previous conversation summary] {summary}",
+                )

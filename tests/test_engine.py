@@ -72,9 +72,9 @@ class TestExecuteToolFinancial:
         result = await engine._execute_tool("get_polymarket", {"query": "Fed rate cut", "limit": 3})
         mock_data_manager.get_polymarket.assert_awaited_once_with(query="Fed rate cut", limit=3)
 
-    async def test_generate_chart(self, engine):
+    async def test_generate_chart_no_send_file(self, engine):
         result = await engine._execute_tool("generate_chart", {"chart_type": "comparison", "symbols": ["AAPL", "MSFT"]})
-        assert result["status"] == "chart_requested"
+        assert result["status"] == "charts unavailable in this context"
 
     async def test_unknown_tool(self, engine):
         result = await engine._execute_tool("nonexistent_tool", {})

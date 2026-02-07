@@ -342,6 +342,20 @@ FINANCIAL_TOOLS = [
         },
     },
     {
+        "name": "get_technical_indicators",
+        "description": "Get technical analysis indicators for a stock: SMA (20/50/200-day), RSI (14), EMA (12/26), MACD. Use for questions about trend direction, support/resistance, overbought/oversold, momentum.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Stock ticker symbol",
+                }
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
         "name": "generate_chart",
         "description": "Generate a financial chart. Returns a chart image that will be sent to Discord.",
         "input_schema": {
@@ -349,7 +363,7 @@ FINANCIAL_TOOLS = [
             "properties": {
                 "chart_type": {
                     "type": "string",
-                    "enum": ["comparison", "sector_heatmap", "earnings_history", "macro_trend"],
+                    "enum": ["comparison", "sector_heatmap", "earnings_history", "macro_trend", "price_chart"],
                     "description": "Type of chart to generate",
                 },
                 "symbols": {
