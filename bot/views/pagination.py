@@ -25,7 +25,7 @@ class PaginatorView(discord.ui.View):
         self.current_page = max(0, self.current_page - 1)
         self._update_buttons()
         embed = self.embeds[self.current_page]
-        embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.embeds)} • Buffet Shao")
+        embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.embeds)} • Shao Buffett")
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary, emoji="▶")
@@ -36,7 +36,7 @@ class PaginatorView(discord.ui.View):
         self.current_page = min(len(self.embeds) - 1, self.current_page + 1)
         self._update_buttons()
         embed = self.embeds[self.current_page]
-        embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.embeds)} • Buffet Shao")
+        embed.set_footer(text=f"Page {self.current_page + 1}/{len(self.embeds)} • Shao Buffett")
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def on_timeout(self) -> None:

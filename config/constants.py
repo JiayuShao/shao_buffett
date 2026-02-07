@@ -21,7 +21,7 @@ class EmbedColor(int, Enum):
 
 # Rate limits per API (requests per minute)
 API_RATE_LIMITS = {
-    "finnhub": 60,
+    "finnhub": 5,         # 3000/month ≈ 100/day — keep headroom for user queries
     "fred": 120,
     "marketaux": 2,       # 100/day ≈ ~2/min conservative
     "fmp": 30,
@@ -33,23 +33,23 @@ API_RATE_LIMITS = {
 # Polling intervals (seconds)
 POLL_INTERVALS = {
     "news": 300,          # 5 min
-    "analyst": 3600,      # 1 hour
+    "analyst": 21600,     # 6 hours (Finnhub budget: 3000/month)
     "earnings": 1800,     # 30 min
     "macro": 3600,        # 1 hour
     "sec_filings": 3600,  # 1 hour
     "insider": 3600,      # 1 hour
-    "price_alerts": 30,   # 30 sec
+    "price_alerts": 60,   # 60 sec (quotes now via FMP)
 }
 
 # Cache TTLs (seconds)
 CACHE_TTL = {
-    "quote": 30,
+    "quote": 60,          # 1 min (FMP-sourced now)
     "profile": 86400,     # 1 day
     "fundamentals": 3600, # 1 hour
     "news": 300,          # 5 min
-    "analyst": 3600,      # 1 hour
+    "analyst": 21600,     # 6 hours (Finnhub budget)
     "macro": 1800,        # 30 min
-    "earnings": 1800,     # 30 min
+    "earnings": 3600,     # 1 hour
     "transcript": 86400,  # 1 day
     "filing": 86400,      # 1 day
 }

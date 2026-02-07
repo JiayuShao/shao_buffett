@@ -44,6 +44,14 @@ class WatchlistRepository:
             )
         return result.split()[-1] != "0"
 
+    async def get_all_users_with_watchlist(self) -> list[int]:
+        """Get all discord_ids that have watchlist entries."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT DISTINCT discord_id FROM watchlists"
+            )
+        return [r["discord_id"] for r in rows]
+
     async def get_all_symbols(self) -> set[str]:
         """Get all unique symbols across all users' watchlists."""
         async with self._pool.acquire() as conn:

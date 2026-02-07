@@ -62,23 +62,24 @@ def process_analyst_data(
     }
     _last_known[symbol] = {"upgrade_ids": new_ids}
 
-    # Check price target changes
-    target = analyst_data.get("price_target", {})
-    if target:
-        current_target = target.get("targetMean") or target.get("targetMedian")
-        last_target = last.get("target_mean")
+    # Check estimate changes (from FMP analyst estimates)
+    estimates = analyst_data.get("estimates", [])
+    if estimates:
+        latest = estimates[0]
+        current_target = latest.get("estimatedEpsAvg")
+        last_target = last.get("est_eps_avg")
 
         if current_target and last_target and current_target != last_target:
             change_pct = ((current_target - last_target) / last_target) * 100
-            if abs(change_pct) >= 3:  # Only notify for significant changes
+            if abs(change_pct) >= 5:  # Only notify for significant changes
                 notif = Notification(
                     type=NotificationType.TARGET_PRICE_CHANGE,
-                    title=f"Target Price Change — {symbol}",
-                    description=f"Consensus target moved from ${last_target:.2f} to ${current_target:.2f} ({change_pct:+.1f}%)",
+                    title=f"Estimate Change — {symbol}",
+                    description=f"Consensus EPS estimate moved from ${last_target:.2f} to ${current_target:.2f} ({change_pct:+.1f}%)",
                     symbol=symbol,
                     data={
-                        "old_target": last_target,
-                        "new_target": current_target,
+                        "old_estimate": last_target,
+                        "new_estimate": current_target,
                         "change_pct": change_pct,
                     },
                     urgency="medium",
@@ -86,6 +87,6 @@ def process_analyst_data(
                 notifications.append(notif)
 
         if current_target:
-            _last_known.setdefault(symbol, {})["target_mean"] = current_target
+            _last_known.setdefault(symbol, {})["est_eps_avg"] = current_target
 
     return notifications

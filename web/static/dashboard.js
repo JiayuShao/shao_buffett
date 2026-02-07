@@ -1,4 +1,4 @@
-/* Buffet Shao — Interactive Dashboard */
+/* Shao Buffett — Interactive Dashboard */
 
 const DARK_LAYOUT = {
     paper_bgcolor: 'rgba(0,0,0,0)',

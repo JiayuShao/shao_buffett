@@ -10,6 +10,14 @@ from utils.retry import async_retry
 log = structlog.get_logger(__name__)
 
 
+class NonRetryableError(Exception):
+    """Raised for HTTP errors that should NOT be retried (403, 401, 404)."""
+
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        super().__init__(message)
+
+
 class BaseCollector(ABC):
     """Abstract base class for all data collectors."""
 
@@ -45,13 +53,15 @@ class BaseCollector(ABC):
         async with session.get(url, params=params, headers=headers) as resp:
             if resp.status == 429:
                 log.warning("rate_limited_by_server", api=self.api_name, url=url)
-                # Notify about server-side rate limit
                 if self.rate_limiter.on_rate_limit:
                     try:
                         await self.rate_limiter.on_rate_limit(self.api_name, 0.0)
                     except Exception:
                         pass
                 raise aiohttp.ClientError("Rate limited")
+            if resp.status in (401, 403, 404):
+                log.warning("non_retryable_http_error", api=self.api_name, status=resp.status, url=url)
+                raise NonRetryableError(resp.status, f"HTTP {resp.status} for {url}")
             resp.raise_for_status()
             return await resp.json()
 

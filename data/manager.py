@@ -71,12 +71,15 @@ class DataManager:
     # ── Cached data access methods ──
 
     async def get_quote(self, symbol: str) -> dict[str, Any]:
-        """Get stock quote with caching."""
+        """Get stock quote with caching. Uses FMP (saves Finnhub budget)."""
         key = f"quote:{symbol}"
         cached = self.cache.get(key)
         if cached:
             return cached
-        data = await self.finnhub.get_quote(symbol)
+        try:
+            data = await self.fmp.get_quote(symbol)
+        except Exception:
+            data = await self.finnhub.get_quote(symbol)
         self.cache.set(key, data, CACHE_TTL["quote"])
         return data
 
@@ -113,29 +116,37 @@ class DataManager:
         return data
 
     async def get_analyst_data(self, symbol: str) -> dict[str, Any]:
-        """Get analyst recommendations and price targets."""
+        """Get analyst recommendations (Finnhub) + estimates (FMP)."""
         key = f"analyst:{symbol}"
         cached = self.cache.get(key)
         if cached:
             return cached
-        recs = await self.finnhub.get_analyst_recommendations(symbol)
-        target = await self.finnhub.get_price_target(symbol)
-        upgrades = await self.finnhub.get_upgrade_downgrade(symbol)
+
+        # Use FMP for estimates (price targets) — Finnhub price-target is premium-only
+        recs, upgrades, estimates = await asyncio.gather(
+            self.finnhub.get_analyst_recommendations(symbol),
+            self.finnhub.get_upgrade_downgrade(symbol),
+            self.fmp.get_analyst_estimates(symbol),
+            return_exceptions=True,
+        )
         data = {
-            "recommendations": recs[:5] if recs else [],
-            "price_target": target,
-            "upgrades_downgrades": upgrades[:10] if upgrades else [],
+            "recommendations": (recs[:5] if isinstance(recs, list) else []),
+            "estimates": (estimates[:3] if isinstance(estimates, list) else []),
+            "upgrades_downgrades": (upgrades[:10] if isinstance(upgrades, list) else []),
         }
         self.cache.set(key, data, CACHE_TTL["analyst"])
         return data
 
     async def get_earnings(self, symbol: str) -> list[dict[str, Any]]:
-        """Get earnings history."""
+        """Get earnings history. Falls back Finnhub → FMP."""
         key = f"earnings:{symbol}"
         cached = self.cache.get(key)
         if cached:
             return cached
-        data = await self.finnhub.get_earnings(symbol)
+        try:
+            data = await self.finnhub.get_earnings(symbol)
+        except Exception:
+            data = []
         self.cache.set(key, data, CACHE_TTL["earnings"])
         return data
 

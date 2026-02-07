@@ -1,4 +1,4 @@
--- Buffet Shao initial schema
+-- Shao Buffett initial schema
 
 CREATE TABLE IF NOT EXISTS user_profiles (
     id SERIAL PRIMARY KEY,

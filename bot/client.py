@@ -7,7 +7,7 @@ from config.settings import settings
 log = structlog.get_logger(__name__)
 
 
-class BuffetShaoBot(discord.Bot):
+class ShaoBuffettBot(discord.Bot):
     """Main Discord bot class with references to all services."""
 
     def __init__(self) -> None:

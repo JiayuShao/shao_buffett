@@ -15,15 +15,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: buffet_shao
-      POSTGRES_USER: buffet_shao
-      POSTGRES_PASSWORD: buffet_shao
+      POSTGRES_DB: shao_buffett
+      POSTGRES_USER: shao_buffett
+      POSTGRES_PASSWORD: shao_buffett
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U buffet_shao"]
+      test: ["CMD-SHELL", "pg_isready -U shao_buffett"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -954,21 +954,25 @@ class TestProfileCog:
         return ProfileCog(bot)
 
     @pytest.mark.asyncio
+    @patch("bot.cogs.profile.NotesRepository")
+    @patch("bot.cogs.profile.WatchlistRepository")
     @patch("bot.cogs.profile.UserRepository")
-    async def test_show(self, MockRepo, cog):
-        repo = MockRepo.return_value
-        repo.get_or_create = AsyncMock(return_value={
+    async def test_show(self, MockUserRepo, MockWLRepo, MockNotesRepo, cog):
+        MockUserRepo.return_value.get_or_create = AsyncMock(return_value={
             "interests": {"sectors": ["Technology", "Healthcare"]},
             "focused_metrics": ["pe_ratio", "eps"],
             "risk_tolerance": "moderate",
             "notification_preferences": {"delivery": "channel"},
         })
+        MockWLRepo.return_value.get = AsyncMock(return_value=["AAPL", "NVDA"])
+        MockNotesRepo.return_value.get_recent = AsyncMock(return_value=[])
+        MockNotesRepo.return_value.get_active_action_items = AsyncMock(return_value=[])
         ctx = make_ctx()
 
         await cog.show.callback(cog, ctx)
 
         embed = ctx.respond.call_args[1]["embed"]
-        assert "Profile" in embed.title
+        assert "Overview" in embed.title
 
     @pytest.mark.asyncio
     @patch("bot.cogs.profile.UserRepository")

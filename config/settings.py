@@ -1,4 +1,4 @@
-"""Pydantic Settings for Buffet Shao configuration."""
+"""Pydantic Settings for Shao Buffett configuration."""
 
 from pydantic_settings import BaseSettings
 from pydantic import Field
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     fmp_api_key: str = ""
 
     # PostgreSQL
-    database_url: str = "postgresql://buffet_shao:buffet_shao@localhost:5432/buffet_shao"
+    database_url: str = "postgresql://shao_buffett:shao_buffett@localhost:5432/shao_buffett"
 
     # Web Dashboard
     web_secret_key: str = "change-me"

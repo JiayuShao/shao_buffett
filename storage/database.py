@@ -1,5 +1,6 @@
 """Async PostgreSQL connection pool manager."""
 
+import json
 import asyncpg
 import structlog
 from pathlib import Path
@@ -10,6 +11,16 @@ log = structlog.get_logger(__name__)
 _pool: asyncpg.Pool | None = None
 
 
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    """Set up JSON codec so JSONB columns return dicts/lists, not strings."""
+    await conn.set_type_codec(
+        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+    )
+    await conn.set_type_codec(
+        "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+    )
+
+
 async def get_pool() -> asyncpg.Pool:
     """Get or create the connection pool."""
     global _pool
@@ -18,6 +29,7 @@ async def get_pool() -> asyncpg.Pool:
             settings.database_url,
             min_size=2,
             max_size=10,
+            init=_init_connection,
         )
         log.info("database_pool_created")
     return _pool

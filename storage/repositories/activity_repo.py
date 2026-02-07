@@ -80,19 +80,46 @@ class ProactiveInsightRepository:
         title: str,
         content: str,
         symbols: list[str] | None = None,
+        content_hash: str | None = None,
     ) -> int:
         """Create a proactive insight. Returns the insight ID."""
         async with self._pool.acquire() as conn:
             return await conn.fetchval(
                 """
-                INSERT INTO proactive_insights (discord_id, insight_type, title, content, symbols)
-                VALUES ($1, $2, $3, $4, $5) RETURNING id
+                INSERT INTO proactive_insights (discord_id, insight_type, title, content, symbols, content_hash)
+                VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
                 """,
                 discord_id,
                 insight_type,
                 title,
                 content,
                 symbols or [],
+                content_hash,
+            )
+
+    async def was_recently_created(
+        self,
+        discord_id: int,
+        insight_type: str,
+        content_hash: str,
+        hours: int = 24,
+    ) -> bool:
+        """Check if an insight with the same hash was created within N hours."""
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM proactive_insights
+                    WHERE discord_id = $1
+                      AND insight_type = $2
+                      AND content_hash = $3
+                      AND created_at > NOW() - INTERVAL '1 hour' * $4
+                )
+                """,
+                discord_id,
+                insight_type,
+                content_hash,
+                hours,
             )
 
     async def get_undelivered(self, discord_id: int) -> list[dict[str, Any]]:

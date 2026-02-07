@@ -22,7 +22,7 @@ def make_embed(
     if footer:
         embed.set_footer(text=footer)
     else:
-        embed.set_footer(text="Buffet Shao • AI Financial Agent")
+        embed.set_footer(text="Shao Buffett • AI Financial Agent")
     if thumbnail:
         embed.set_thumbnail(url=thumbnail)
     if image:
