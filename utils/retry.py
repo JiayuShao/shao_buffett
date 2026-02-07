@@ -2,12 +2,24 @@
 
 import asyncio
 import functools
+import re
 from typing import TypeVar, Callable, Any
 import structlog
 
 log = structlog.get_logger(__name__)
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+# Patterns that look like API keys in URLs
+_SENSITIVE_PARAMS = re.compile(
+    r"((?:token|api_?key|api_?token|secret|password|authorization)=)[^&\s'\")]+",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_error(error: str) -> str:
+    """Strip API keys and tokens from error messages."""
+    return _SENSITIVE_PARAMS.sub(r"\1[REDACTED]", error)
 
 
 def async_retry(
@@ -36,7 +48,7 @@ def async_retry(
                         attempt=attempt + 1,
                         max_retries=max_retries,
                         delay=delay,
-                        error=str(e),
+                        error=_sanitize_error(str(e)),
                     )
                     await asyncio.sleep(delay)
             raise last_exception  # type: ignore[misc]

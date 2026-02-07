@@ -5,6 +5,7 @@ import aiohttp
 import structlog
 from abc import ABC, abstractmethod
 from typing import Any
+from urllib.parse import urlparse
 from data.rate_limiter import RateLimiter
 from utils.retry import async_retry
 
@@ -53,7 +54,6 @@ class BaseCollector(ABC):
     ) -> dict[str, Any] | list[Any]:
         """Make a rate-limited HTTP GET request with retry."""
         # Circuit breaker: skip URLs known to 403
-        from urllib.parse import urlparse
         url_path = f"{self.api_name}:{urlparse(url).path}"
         if url_path in _CIRCUIT_OPEN:
             if time.monotonic() < _CIRCUIT_OPEN[url_path]:

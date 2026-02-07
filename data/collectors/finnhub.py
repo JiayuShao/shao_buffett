@@ -129,7 +129,7 @@ class FinnhubCollector(BaseCollector):
                         if sym in self._ws_callbacks:
                             await self._ws_callbacks[sym](trade)
         except Exception as e:
-            log.error("finnhub_ws_error", error=str(e))
+            log.error("finnhub_ws_error", error_type=type(e).__name__)
 
     async def stop_websocket(self) -> None:
         if self._ws:
