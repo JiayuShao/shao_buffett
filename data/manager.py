@@ -401,6 +401,29 @@ class DataManager:
         self.cache.set(key, data, CACHE_TTL["quote"])
         return data
 
+    async def get_trending_stocks(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Get stocks trending in financial news right now."""
+        key = f"trending:{limit}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+        data = await self.marketaux.get_trending_entities(limit=limit)
+        self.cache.set(key, data, CACHE_TTL["news"])
+        return data
+
+    async def get_sentiment(self, symbols: list[str], interval: str = "day", days: int = 7) -> dict[str, Any]:
+        """Get news sentiment time series for symbols."""
+        joined = ",".join(symbols)
+        key = f"sentiment:{joined}:{interval}:{days}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+        data = await self.marketaux.get_sentiment_stats(
+            symbols=joined, interval=interval, limit=days,
+        )
+        self.cache.set(key, data, CACHE_TTL["news"])
+        return data
+
     async def get_insider_transactions(self, symbol: str) -> dict[str, Any]:
         """Get insider transactions from Finnhub."""
         key = f"insider:{symbol}"

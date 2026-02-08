@@ -21,6 +21,8 @@ TOOL_LABELS = {
     "get_sec_filings": "Checking SEC filings",
     "get_research_papers": "Searching research",
     "get_polymarket": "Checking prediction markets",
+    "get_trending_stocks": "Checking what's trending",
+    "get_sentiment": "Analyzing sentiment",
     "get_technical_indicators": "Running technicals",
     "generate_chart": "Generating chart",
     "get_factor_grades": "Computing factor grades",

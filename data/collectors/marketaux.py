@@ -65,3 +65,79 @@ class MarketAuxCollector(BaseCollector):
     async def get_news_for_symbol(self, symbol: str, limit: int = 5) -> list[dict[str, Any]]:
         """Get news specifically for one symbol."""
         return await self.get_news(symbols=symbol, limit=limit)
+
+    async def get_trending_entities(
+        self,
+        entity_types: str = "equity",
+        countries: str = "us",
+        limit: int = 10,
+        published_after: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get trending entities by news volume and sentiment."""
+        params = self._params(
+            entity_types=entity_types,
+            countries=countries,
+            limit=limit,
+            language="en",
+            sort="total_documents",
+            sort_order="desc",
+        )
+        if published_after:
+            params["published_after"] = published_after
+
+        data = await self._request(f"{BASE_URL}/entity/trending/aggregation", params=params)
+        entities = data.get("data", [])
+
+        return [
+            {
+                "symbol": e.get("key", ""),
+                "name": e.get("name", ""),
+                "type": e.get("type", ""),
+                "industry": e.get("industry", ""),
+                "country": e.get("country", ""),
+                "total_documents": e.get("total_documents", 0),
+                "sentiment_avg": e.get("sentiment_avg"),
+                "sentiment_positive": e.get("doc_count_sentiment_positive", 0),
+                "sentiment_negative": e.get("doc_count_sentiment_negative", 0),
+                "sentiment_neutral": e.get("doc_count_sentiment_neutral", 0),
+            }
+            for e in entities
+        ]
+
+    async def get_sentiment_stats(
+        self,
+        symbols: str,
+        interval: str = "day",
+        limit: int = 7,
+    ) -> dict[str, Any]:
+        """Get sentiment time series for symbols."""
+        params = self._params(
+            symbols=symbols,
+            interval=interval,
+            limit=limit,
+            language="en",
+        )
+
+        data = await self._request(f"{BASE_URL}/entity/stats/intraday", params=params)
+        entities = data.get("data", [])
+
+        result: dict[str, Any] = {}
+        for entity in entities:
+            symbol = entity.get("key", "")
+            result[symbol] = {
+                "name": entity.get("name", ""),
+                "total_documents": entity.get("total_documents", 0),
+                "sentiment_avg": entity.get("sentiment_avg"),
+                "timeline": [
+                    {
+                        "date": point.get("date", ""),
+                        "articles": point.get("total_documents", 0),
+                        "sentiment_avg": point.get("sentiment_avg"),
+                        "positive": point.get("doc_count_sentiment_positive", 0),
+                        "negative": point.get("doc_count_sentiment_negative", 0),
+                        "neutral": point.get("doc_count_sentiment_neutral", 0),
+                    }
+                    for point in entity.get("data", [])
+                ],
+            }
+        return result

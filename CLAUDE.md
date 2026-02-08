@@ -36,8 +36,8 @@
 - arXiv: quantitative finance research papers
 - Polymarket: prediction market data (market-implied probabilities for macro/political/crypto events)
 
-## AI Tools (23 total)
-- 14 financial data tools (quote, profile, fundamentals, analyst, earnings, news, macro, sector, transcript, filings, papers, polymarket, technical_indicators, generate_chart)
+## AI Tools (25 total)
+- 16 financial data tools (quote, profile, fundamentals, analyst, earnings, news, macro, sector, transcript, filings, papers, polymarket, trending_stocks, sentiment, technical_indicators, generate_chart)
 - 2 quantitative tools (get_factor_grades, get_portfolio_health)
 - 3 note tools (save_note, get_user_notes, resolve_action_item)
 - 4 portfolio tools (get_portfolio, update_portfolio, get_financial_profile, update_financial_profile)

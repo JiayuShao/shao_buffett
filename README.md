@@ -1,10 +1,10 @@
 # Shao Buffett
 
-AI-powered personal financial analyst Discord bot. Always-on market intelligence with 23 AI tools, cross-conversation memory, portfolio tracking, and proactive insights.
+AI-powered personal financial analyst Discord bot. Always-on market intelligence with 25 AI tools, cross-conversation memory, portfolio tracking, and proactive insights.
 
 ## Features
 
-- **23 AI tools** — Real-time quotes, fundamentals, analyst data, earnings, news, macro, SEC filings, technicals, factor grades, portfolio health, and more
+- **25 AI tools** — Real-time quotes, fundamentals, analyst data, earnings, news, macro, SEC filings, technicals, factor grades, portfolio health, and more
 - **7 financial APIs** — Finnhub, FRED, MarketAux, FMP, SEC EDGAR, arXiv, Polymarket
 - **Cross-conversation memory** — Saves notes, preferences, and action items across sessions
 - **Portfolio tracking** — Holdings with cost basis, financial profile, and goal-aware analysis

@@ -247,6 +247,51 @@ FINANCIAL_TOOLS = [
         },
     },
     {
+        "name": "get_trending_stocks",
+        "description": (
+            "Get stocks currently trending in financial news, ranked by news volume with sentiment breakdown. "
+            "Shows which tickers have the most media attention right now and whether coverage is positive or negative. "
+            "Use when the user asks 'what's trending?', 'what's in the news?', 'what stocks are hot?', or "
+            "for market pulse checks."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of trending stocks to return (default 10)",
+                    "default": 10,
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_sentiment",
+        "description": (
+            "Get news sentiment time series for one or more stocks — shows how media sentiment has trended "
+            "over recent days. Returns daily article counts and average sentiment (-1 to +1) per symbol. "
+            "Use when the user asks about sentiment, media tone, 'what does the market think about X?', "
+            "or to compare sentiment across multiple tickers."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of stock ticker symbols (e.g. ['AAPL', 'TSLA'])",
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Number of days of sentiment history (default 7)",
+                    "default": 7,
+                },
+            },
+            "required": ["symbols"],
+        },
+    },
+    {
         "name": "get_technical_indicators",
         "description": (
             "Get technical analysis indicators: SMA (20/50/200-day), RSI (14), EMA (12/26), MACD. "

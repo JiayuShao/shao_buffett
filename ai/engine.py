@@ -440,6 +440,15 @@ class AIEngine:
                         query=tool_input["query"],
                         limit=tool_input.get("limit", 5),
                     )
+                case "get_trending_stocks":
+                    return await self.data_manager.get_trending_stocks(
+                        limit=tool_input.get("limit", 10),
+                    )
+                case "get_sentiment":
+                    return await self.data_manager.get_sentiment(
+                        symbols=tool_input["symbols"],
+                        days=tool_input.get("days", 7),
+                    )
                 case "get_technical_indicators":
                     return await self.data_manager.get_technical_indicators(tool_input["symbol"])
                 case "generate_chart":
