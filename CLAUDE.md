@@ -5,6 +5,7 @@
 - Async throughout (asyncio, aiohttp, asyncpg)
 - Multi-model routing: Haiku (routine), Sonnet (standard), Opus (deep analysis)
 - Portfolio-aware routing: upgrades to Sonnet for portfolio decisions
+- Dynamic tool filtering: Haiku gets 6 tools, Sonnet/Opus get all 25 (~1.5K token savings per Haiku request)
 - Web dashboard: Quart + Discord OAuth + Plotly.js
 - Personal analyst features: cross-conversation notes, portfolio tracking, proactive insights
 
@@ -12,9 +13,13 @@
 - All data access goes through `data/manager.py` (caching + rate limiting)
 - AI tool-use loop in `ai/engine.py` — Claude calls financial tools, engine executes, loop continues
 - Parallel tool execution: tools requested in the same round run with `asyncio.gather()`
+- Parallel DB queries: `_prepare_chat()` and `_inject_user_context()` run independent queries concurrently
+- Parallel API calls: `get_fundamentals()` fetches metrics + ratios concurrently
 - Scheduler parallelism: `asyncio.TaskGroup` for quote fetching, `asyncio.gather(return_exceptions=True)` for independent insight checks
 - True streaming: final response uses `client.messages.stream()` for real-time text delivery
 - Consolidated tool loop: single `_run_tool_loop()` with `stream_final` parameter replaces two separate methods
+- Tool result capping: `MAX_TOOL_RESULT_CHARS = 12_000` truncates large results (transcripts, filings)
+- Background summarization: `summarize_if_needed()` runs as fire-and-forget `asyncio.create_task()`
 - `user_id` threaded through tool loop so note/portfolio tools know who's calling
 - System prompt injected with user's notes, portfolio, and financial profile before each chat
 - Activity logging extracts mentioned symbols and classifies query type
@@ -25,12 +30,14 @@
   - Insider trading alerts ($500K+ transactions)
   - Auto-AI earnings transcript analysis (within 48h of reporting)
 - Factor grades: quantitative A+-F ratings across 5 dimensions relative to sector peers
+- Pre-compiled regex: router patterns compiled at module load for faster matching
+- Opus budget: `_OpusBudget` class (replaces mutable globals) tracks daily usage
 - Scheduler uses `discord.ext.tasks` for periodic polling
 - Repositories provide CRUD for all database tables
 
 ## Financial APIs
 - Finnhub: quotes, analyst data, earnings, news, insider trades (WebSocket for real-time)
-- FRED: 812K+ macro series via fredapi
+- FRED: 812K+ macro series via direct HTTP API
 - MarketAux: financial news with sentiment
 - FMP: fundamentals, ratios, earnings transcripts, sector performance
 - SEC EDGAR: 10-K, 10-Q, 8-K filings
@@ -54,14 +61,14 @@
 # Development
 docker compose up db         # Start PostgreSQL only
 source .venv/bin/activate    # Activate virtual environment
-python -m bot.main           # Run bot
+python3 -m bot.main          # Run bot
 
-# Production
+# Production (uses pinned requirements.lock.txt)
 docker compose up -d         # Start everything
 
 # Tests
 source .venv/bin/activate
-python -m pytest tests/
+python3 -m pytest tests/
 ```
 
 ## File Layout
@@ -84,3 +91,8 @@ python -m pytest tests/
   - `storage/repositories/activity_repo.py` — ActivityRepository + ProactiveInsightRepository
 - `utils/` — Formatting, time, retry, embed builder
 - `config/` — Settings, constants, logging
+- `.claude/skills/` — Claude Code skills for common dev workflows:
+  - `add-financial-tool` — Add a new AI tool (tools.py → engine.py → manager.py)
+  - `add-discord-cog` — Add a new slash command cog (bot/cogs/ → main.py)
+  - `add-db-migration` — Create a database migration (storage/migrations/)
+  - `add-data-collector` — Integrate a new financial API (data/collectors/ → manager.py)
