@@ -12,6 +12,7 @@
 - All data access goes through `data/manager.py` (caching + rate limiting)
 - AI tool-use loop in `ai/engine.py` — Claude calls financial tools, engine executes, loop continues
 - Parallel tool execution: tools requested in the same round run with `asyncio.gather()`
+- Scheduler parallelism: `asyncio.TaskGroup` for quote fetching, `asyncio.gather(return_exceptions=True)` for independent insight checks
 - True streaming: final response uses `client.messages.stream()` for real-time text delivery
 - Consolidated tool loop: single `_run_tool_loop()` with `stream_final` parameter replaces two separate methods
 - `user_id` threaded through tool loop so note/portfolio tools know who's calling
@@ -52,10 +53,15 @@
 ```bash
 # Development
 docker compose up db         # Start PostgreSQL only
+source .venv/bin/activate    # Activate virtual environment
 python -m bot.main           # Run bot
 
 # Production
 docker compose up -d         # Start everything
+
+# Tests
+source .venv/bin/activate
+python -m pytest tests/
 ```
 
 ## File Layout

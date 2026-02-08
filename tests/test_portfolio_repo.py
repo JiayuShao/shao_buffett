@@ -1,7 +1,7 @@
 """Tests for storage/repositories/portfolio_repo.py — portfolio CRUD."""
 
 import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from storage.repositories.portfolio_repo import PortfolioRepository, FinancialProfileRepository
 
 
@@ -13,9 +13,9 @@ class TestPortfolioRepository:
     async def test_get_holdings(self, repo, fake_conn):
         fake_conn.fetch_results = [[
             {"symbol": "AAPL", "shares": 100, "cost_basis": 185.0, "acquired_date": None,
-             "account_type": "taxable", "notes": None, "updated_at": datetime.utcnow()},
+             "account_type": "taxable", "notes": None, "updated_at": datetime.now(UTC)},
             {"symbol": "MSFT", "shares": 50, "cost_basis": 380.0, "acquired_date": None,
-             "account_type": "ira", "notes": "Long term hold", "updated_at": datetime.utcnow()},
+             "account_type": "ira", "notes": "Long term hold", "updated_at": datetime.now(UTC)},
         ]]
         holdings = await repo.get_holdings(12345)
         assert len(holdings) == 2

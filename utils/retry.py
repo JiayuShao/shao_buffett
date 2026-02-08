@@ -3,12 +3,14 @@
 import asyncio
 import functools
 import re
-from typing import TypeVar, Callable, Any
+from collections.abc import Awaitable, Callable
+from typing import ParamSpec, TypeVar
 import structlog
 
 log = structlog.get_logger(__name__)
 
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
 # Patterns that look like API keys in URLs
 _SENSITIVE_PARAMS = re.compile(
@@ -27,13 +29,13 @@ def async_retry(
     base_delay: float = 1.0,
     max_delay: float = 60.0,
     exceptions: tuple[type[Exception], ...] = (Exception,),
-) -> Callable[[F], F]:
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Decorator for async functions with exponential backoff retry."""
 
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
         @functools.wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            last_exception = None
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            last_exception: Exception | None = None
             for attempt in range(max_retries + 1):
                 try:
                     return await func(*args, **kwargs)
@@ -53,6 +55,6 @@ def async_retry(
                     await asyncio.sleep(delay)
             raise last_exception  # type: ignore[misc]
 
-        return wrapper  # type: ignore[return-value]
+        return wrapper
 
     return decorator

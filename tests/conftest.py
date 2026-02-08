@@ -5,7 +5,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 # Ensure settings can be imported without real env vars
 os.environ.setdefault("DISCORD_TOKEN", "test-token")
@@ -182,11 +182,11 @@ def mock_dispatcher():
 @pytest.fixture
 def now():
     """Current UTC datetime."""
-    return datetime.utcnow()
+    return datetime.now(UTC)
 
 
 @pytest.fixture
 def old_datetime():
     """Datetime 5 days ago (for stale action item tests)."""
     from datetime import timedelta
-    return datetime.utcnow() - timedelta(days=5)
+    return datetime.now(UTC) - timedelta(days=5)

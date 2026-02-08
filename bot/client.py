@@ -1,8 +1,17 @@
 """Discord bot client with service references."""
 
+from typing import TYPE_CHECKING
+
+import asyncpg
 import discord
 import structlog
 from config.settings import settings
+
+if TYPE_CHECKING:
+    from ai.engine import AIEngine
+    from data.manager import DataManager
+    from notifications.dispatcher import NotificationDispatcher
+    from scheduler.scheduler import Scheduler
 
 log = structlog.get_logger(__name__)
 
@@ -24,11 +33,11 @@ class ShaoBuffettBot(discord.Bot):
         )
 
         # Service references (set during startup in main.py)
-        self.data_manager = None
-        self.ai_engine = None
-        self.notification_dispatcher = None
-        self.scheduler = None
-        self.db_pool = None
+        self.data_manager: DataManager | None = None
+        self.ai_engine: AIEngine | None = None
+        self.notification_dispatcher: NotificationDispatcher | None = None
+        self.scheduler: Scheduler | None = None
+        self.db_pool: asyncpg.Pool | None = None
 
     async def on_ready(self) -> None:
         log.info(

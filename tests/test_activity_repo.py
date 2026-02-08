@@ -1,7 +1,7 @@
 """Tests for storage/repositories/activity_repo.py — activity and insight repos."""
 
 import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from storage.repositories.activity_repo import ActivityRepository, ProactiveInsightRepository
 
 
@@ -75,7 +75,7 @@ class TestProactiveInsightRepository:
     async def test_get_undelivered(self, repo, fake_conn):
         fake_conn.fetch_results = [[
             {"id": 1, "insight_type": "price_movement", "title": "AAPL +5%",
-             "content": "Big move", "symbols": ["AAPL"], "created_at": datetime.utcnow()},
+             "content": "Big move", "symbols": ["AAPL"], "created_at": datetime.now(UTC)},
         ]]
         insights = await repo.get_undelivered(12345)
         assert len(insights) == 1

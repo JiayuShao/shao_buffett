@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from scheduler.proactive import (
     ProactiveInsightGenerator,
@@ -107,7 +107,7 @@ class TestCheckPriceMovements(TestProactiveInsightGenerator):
 
 class TestCheckUpcomingEarnings(TestProactiveInsightGenerator):
     async def test_creates_insight_for_upcoming_earnings(self, generator, mock_data_manager):
-        future_date = (datetime.utcnow() + timedelta(days=3)).isoformat()
+        future_date = (datetime.now(UTC) + timedelta(days=3)).isoformat()
         mock_data_manager.get_earnings = AsyncMock(return_value=[{"date": future_date}])
         generator.insight_repo.create = AsyncMock(return_value=1)
 
@@ -119,7 +119,7 @@ class TestCheckUpcomingEarnings(TestProactiveInsightGenerator):
         assert "AAPL" in call_kwargs["title"]
 
     async def test_no_insight_for_distant_earnings(self, generator, mock_data_manager):
-        future_date = (datetime.utcnow() + timedelta(days=30)).isoformat()
+        future_date = (datetime.now(UTC) + timedelta(days=30)).isoformat()
         mock_data_manager.get_earnings = AsyncMock(return_value=[{"date": future_date}])
         generator.insight_repo.create = AsyncMock()
 
@@ -127,7 +127,7 @@ class TestCheckUpcomingEarnings(TestProactiveInsightGenerator):
         assert count == 0
 
     async def test_no_insight_for_past_earnings(self, generator, mock_data_manager):
-        past_date = (datetime.utcnow() - timedelta(days=5)).isoformat()
+        past_date = (datetime.now(UTC) - timedelta(days=5)).isoformat()
         mock_data_manager.get_earnings = AsyncMock(return_value=[{"date": past_date}])
         generator.insight_repo.create = AsyncMock()
 
@@ -192,7 +192,7 @@ class TestSuggestWatchlistAdditions(TestProactiveInsightGenerator):
 
 class TestCheckStaleActionItems(TestProactiveInsightGenerator):
     async def test_creates_reminder_for_old_item(self, generator):
-        old_time = datetime.utcnow() - timedelta(days=5)
+        old_time = datetime.now(UTC) - timedelta(days=5)
         generator.notes_repo.get_active_action_items = AsyncMock(return_value=[
             {"id": 1, "content": "Review AAPL position", "symbols": ["AAPL"], "created_at": old_time},
         ])
@@ -205,7 +205,7 @@ class TestCheckStaleActionItems(TestProactiveInsightGenerator):
         assert "5 days" in call_kwargs["title"]
 
     async def test_no_reminder_for_recent_item(self, generator):
-        recent_time = datetime.utcnow() - timedelta(days=1)
+        recent_time = datetime.now(UTC) - timedelta(days=1)
         generator.notes_repo.get_active_action_items = AsyncMock(return_value=[
             {"id": 1, "content": "Check something", "symbols": [], "created_at": recent_time},
         ])
@@ -309,7 +309,7 @@ class TestDispatchPending(TestProactiveInsightGenerator):
         generator.watchlist_repo.get_all_users_with_watchlist = AsyncMock(return_value=[])
         generator.insight_repo.get_undelivered = AsyncMock(return_value=[
             {"id": 1, "insight_type": "price_movement", "title": "AAPL +5%",
-             "content": "Big move", "symbols": ["AAPL"], "created_at": datetime.utcnow()},
+             "content": "Big move", "symbols": ["AAPL"], "created_at": datetime.now(UTC)},
         ])
         generator.insight_repo.mark_delivered = AsyncMock()
 
@@ -323,7 +323,7 @@ class TestDispatchPending(TestProactiveInsightGenerator):
         generator.watchlist_repo.get_all_users_with_watchlist = AsyncMock(return_value=[222])
         generator.insight_repo.get_undelivered = AsyncMock(return_value=[
             {"id": 2, "insight_type": "price_movement", "title": "TSLA +4%",
-             "content": "Big move", "symbols": ["TSLA"], "created_at": datetime.utcnow()},
+             "content": "Big move", "symbols": ["TSLA"], "created_at": datetime.now(UTC)},
         ])
         generator.insight_repo.mark_delivered = AsyncMock()
 
@@ -345,7 +345,7 @@ class TestDispatchPending(TestProactiveInsightGenerator):
         generator.watchlist_repo.get_all_users_with_watchlist = AsyncMock(return_value=[])
         generator.insight_repo.get_undelivered = AsyncMock(return_value=[
             {"id": 1, "insight_type": "price_movement", "title": "AAPL +5%",
-             "content": "Big move", "symbols": ["AAPL"], "created_at": datetime.utcnow()},
+             "content": "Big move", "symbols": ["AAPL"], "created_at": datetime.now(UTC)},
         ])
         mock_dispatcher.dispatch = AsyncMock(return_value=0)  # No one received it
         generator.insight_repo.mark_delivered = AsyncMock()

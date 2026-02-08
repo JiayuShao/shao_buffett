@@ -1,7 +1,7 @@
 """Tests for storage/repositories/notes_repo.py — notes CRUD."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from storage.repositories.notes_repo import NotesRepository
 
@@ -43,8 +43,8 @@ class TestNotesRepository:
 
     async def test_get_recent(self, repo, fake_conn):
         fake_conn.fetch_results = [[
-            {"id": 1, "note_type": "concern", "content": "Test", "symbols": ["AAPL"], "is_resolved": False, "created_at": datetime.utcnow()},
-            {"id": 2, "note_type": "insight", "content": "Test2", "symbols": [], "is_resolved": False, "created_at": datetime.utcnow()},
+            {"id": 1, "note_type": "concern", "content": "Test", "symbols": ["AAPL"], "is_resolved": False, "created_at": datetime.now(UTC)},
+            {"id": 2, "note_type": "insight", "content": "Test2", "symbols": [], "is_resolved": False, "created_at": datetime.now(UTC)},
         ]]
         notes = await repo.get_recent(12345, limit=10)
         assert len(notes) == 2
@@ -52,7 +52,7 @@ class TestNotesRepository:
 
     async def test_get_by_type(self, repo, fake_conn):
         fake_conn.fetch_results = [[
-            {"id": 1, "note_type": "concern", "content": "Worried", "symbols": [], "is_resolved": False, "created_at": datetime.utcnow()},
+            {"id": 1, "note_type": "concern", "content": "Worried", "symbols": [], "is_resolved": False, "created_at": datetime.now(UTC)},
         ]]
         notes = await repo.get_by_type(12345, "concern")
         assert len(notes) == 1
@@ -60,14 +60,14 @@ class TestNotesRepository:
 
     async def test_get_for_symbols(self, repo, fake_conn):
         fake_conn.fetch_results = [[
-            {"id": 1, "note_type": "concern", "content": "NVDA PE high", "symbols": ["NVDA"], "is_resolved": False, "created_at": datetime.utcnow()},
+            {"id": 1, "note_type": "concern", "content": "NVDA PE high", "symbols": ["NVDA"], "is_resolved": False, "created_at": datetime.now(UTC)},
         ]]
         notes = await repo.get_for_symbols(12345, ["NVDA"])
         assert len(notes) == 1
 
     async def test_search(self, repo, fake_conn):
         fake_conn.fetch_results = [[
-            {"id": 1, "note_type": "insight", "content": "PE ratio is elevated", "symbols": [], "is_resolved": False, "created_at": datetime.utcnow()},
+            {"id": 1, "note_type": "insight", "content": "PE ratio is elevated", "symbols": [], "is_resolved": False, "created_at": datetime.now(UTC)},
         ]]
         notes = await repo.search(12345, "PE ratio")
         assert len(notes) == 1
@@ -75,7 +75,7 @@ class TestNotesRepository:
 
     async def test_get_active_action_items(self, repo, fake_conn):
         fake_conn.fetch_results = [[
-            {"id": 3, "content": "Review AAPL position", "symbols": ["AAPL"], "created_at": datetime.utcnow()},
+            {"id": 3, "content": "Review AAPL position", "symbols": ["AAPL"], "created_at": datetime.now(UTC)},
         ]]
         items = await repo.get_active_action_items(12345)
         assert len(items) == 1

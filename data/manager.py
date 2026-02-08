@@ -172,9 +172,9 @@ class DataManager:
         # Fallback to Finnhub company news if MarketAux failed
         if not data and symbol:
             try:
-                from datetime import datetime, timedelta
-                to_date = datetime.utcnow().strftime("%Y-%m-%d")
-                from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+                from datetime import UTC, datetime, timedelta
+                to_date = datetime.now(UTC).strftime("%Y-%m-%d")
+                from_date = (datetime.now(UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
                 finnhub_articles = await self.finnhub.get_company_news(symbol, from_date, to_date)
                 log.info("finnhub_news_fallback", symbol=symbol, articles=len(finnhub_articles))
                 data = [
@@ -304,9 +304,9 @@ class DataManager:
 
         # Fallback: per-symbol Finnhub (more expensive but always works)
         if not data:
-            from datetime import datetime, timedelta
-            to_date = datetime.utcnow().strftime("%Y-%m-%d")
-            from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+            from datetime import UTC, datetime, timedelta
+            to_date = datetime.now(UTC).strftime("%Y-%m-%d")
+            from_date = (datetime.now(UTC) - timedelta(days=2)).strftime("%Y-%m-%d")
             for symbol in symbols:
                 try:
                     finnhub_articles = await self.finnhub.get_company_news(symbol, from_date, to_date)
@@ -363,7 +363,7 @@ class DataManager:
         if cached:
             return cached
 
-        # Fetch all indicators in parallel
+        # Fetch all indicators in parallel (return_exceptions so partial results work)
         sma_20, sma_50, sma_200, rsi_14, ema_12, ema_26 = await asyncio.gather(
             self.fmp.get_technical_indicator(symbol, "sma", period=20),
             self.fmp.get_technical_indicator(symbol, "sma", period=50),
@@ -371,7 +371,16 @@ class DataManager:
             self.fmp.get_technical_indicator(symbol, "rsi", period=14),
             self.fmp.get_technical_indicator(symbol, "ema", period=12),
             self.fmp.get_technical_indicator(symbol, "ema", period=26),
+            return_exceptions=True,
         )
+
+        # Treat exceptions as empty results
+        if isinstance(sma_20, Exception): sma_20 = []
+        if isinstance(sma_50, Exception): sma_50 = []
+        if isinstance(sma_200, Exception): sma_200 = []
+        if isinstance(rsi_14, Exception): rsi_14 = []
+        if isinstance(ema_12, Exception): ema_12 = []
+        if isinstance(ema_26, Exception): ema_26 = []
 
         # Compute MACD from EMA-12 and EMA-26
         ema12_val = ema_12[0].get("ema") if ema_12 else None

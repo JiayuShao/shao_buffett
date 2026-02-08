@@ -106,14 +106,19 @@ class Scheduler:
             if not alerts:
                 return
 
-            # Fetch quotes for all alerted symbols
+            # Fetch quotes for all alerted symbols in parallel
             symbols = {a["symbol"] for a in alerts}
-            quotes = {}
-            for symbol in symbols:
+            quotes: dict = {}
+
+            async def _fetch_quote(sym: str) -> None:
                 try:
-                    quotes[symbol] = await self.dm.get_quote(symbol)
+                    quotes[sym] = await self.dm.get_quote(sym)
                 except Exception:
                     pass
+
+            async with asyncio.TaskGroup() as tg:
+                for symbol in symbols:
+                    tg.create_task(_fetch_quote(symbol))
 
             triggered = check_price_alerts(alerts, quotes)
             for notif, alert_id in triggered:

@@ -1,7 +1,7 @@
 """Conversation notes repository — cross-conversation memory."""
 
 import asyncpg
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
@@ -20,7 +20,7 @@ class NotesRepository:
         """Save a note. Returns the note ID."""
         expires_at = None
         if expires_days:
-            expires_at = datetime.utcnow() + timedelta(days=expires_days)
+            expires_at = datetime.now(UTC) + timedelta(days=expires_days)
 
         async with self._pool.acquire() as conn:
             return await conn.fetchval(

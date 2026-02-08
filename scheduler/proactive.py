@@ -1,10 +1,12 @@
 """Proactive insight generator — anticipates user needs."""
 
+import asyncio
 import hashlib
 import json
 import structlog
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import UTC, datetime, timedelta
+import asyncpg
+from ai.engine import AIEngine
 from data.manager import DataManager
 from storage.repositories.portfolio_repo import PortfolioRepository
 from storage.repositories.notes_repo import NotesRepository
@@ -66,10 +68,10 @@ class ProactiveInsightGenerator:
 
     def __init__(
         self,
-        db_pool: Any,
+        db_pool: asyncpg.Pool,
         data_manager: DataManager,
         dispatcher: NotificationDispatcher,
-        ai_engine: Any | None = None,
+        ai_engine: AIEngine | None = None,
     ) -> None:
         self.pool = db_pool
         self.dm = data_manager
@@ -132,13 +134,17 @@ class ProactiveInsightGenerator:
             except Exception as e:
                 log.debug("prefetch_profile_error", user_id=user_id, error=str(e))
 
-        for sector in needed_sectors:
+        async def _fetch_sector(sector: str) -> None:
             try:
                 articles = await self.dm.get_news_for_sectors(sector, limit=10)
                 self._sector_news_cache[sector] = articles
                 log.debug("prefetched_sector_news", sector=sector, count=len(articles))
             except Exception as e:
                 log.debug("prefetch_news_error", sector=sector, error=str(e))
+
+        async with asyncio.TaskGroup() as tg:
+            for sector in needed_sectors:
+                tg.create_task(_fetch_sector(sector))
 
     async def _generate_for_user(self, user_id: int) -> int:
         """Generate insights for a specific user."""
@@ -164,49 +170,63 @@ class ProactiveInsightGenerator:
         if not all_symbols and not interests:
             return 0
 
-        # Check for significant price movements on held/watched positions
+        # Run all independent checks concurrently
+        check_coros = []
         if all_symbols:
-            count += await self._check_price_movements(user_id, all_symbols)
-            count += await self._check_upcoming_earnings(user_id, all_symbols)
-            count += await self._check_earnings_calendar_week(user_id, all_symbols)
-            count += await self._check_insider_trades(user_id, all_symbols)
-            count += await self._auto_analyze_recent_earnings(user_id, all_symbols)
-            count += await self._suggest_watchlist_additions(user_id, held_symbols)
-
-        # Check for stale action items
-        count += await self._check_stale_action_items(user_id)
-
-        # Cross-reference with Polymarket and sector news
+            check_coros.extend([
+                self._check_price_movements(user_id, all_symbols),
+                self._check_upcoming_earnings(user_id, all_symbols),
+                self._check_earnings_calendar_week(user_id, all_symbols),
+                self._check_insider_trades(user_id, all_symbols),
+                self._auto_analyze_recent_earnings(user_id, all_symbols),
+                self._suggest_watchlist_additions(user_id, held_symbols),
+            ])
+        check_coros.append(self._check_stale_action_items(user_id))
         if interests:
-            count += await self._check_polymarket_signals(user_id, interests, all_symbols)
-            count += await self._check_interest_news(user_id, interests, all_symbols)
+            check_coros.extend([
+                self._check_polymarket_signals(user_id, interests, all_symbols),
+                self._check_interest_news(user_id, interests, all_symbols),
+            ])
+
+        results = await asyncio.gather(*check_coros, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                log.error("proactive_check_error", user_id=user_id, error=str(r))
+            else:
+                count += r
 
         return count
 
     async def _check_price_movements(self, user_id: int, symbols: list[str]) -> int:
         """Check for significant price moves on tracked positions."""
-        count = 0
-        for symbol in symbols:
-            try:
-                quote = await self.dm.get_quote(symbol)
-                change_pct = quote.get("dp", quote.get("change_percent", quote.get("changesPercentage", 0)))
-                if change_pct is None:
-                    continue
-                change_pct = float(change_pct)
+        # Fetch all quotes in parallel
+        results = await asyncio.gather(
+            *(self.dm.get_quote(sym) for sym in symbols),
+            return_exceptions=True,
+        )
 
-                if abs(change_pct) >= SIGNIFICANT_MOVE_PCT:
-                    direction = "up" if change_pct > 0 else "down"
-                    price = quote.get("c", quote.get("price", 0))
-                    await self.insight_repo.create(
-                        discord_id=user_id,
-                        insight_type="price_movement",
-                        title=f"{symbol} moved {change_pct:+.1f}% today",
-                        content=f"**{symbol}** is {direction} **{change_pct:+.1f}%** today (${price:.2f}). This is a significant move worth monitoring.",
-                        symbols=[symbol],
-                    )
-                    count += 1
-            except Exception as e:
-                log.debug("price_check_error", symbol=symbol, error=str(e))
+        count = 0
+        for symbol, result in zip(symbols, results):
+            if isinstance(result, Exception):
+                log.debug("price_check_error", symbol=symbol, error=str(result))
+                continue
+            quote = result
+            change_pct = quote.get("dp", quote.get("change_percent", quote.get("changesPercentage", 0)))
+            if change_pct is None:
+                continue
+            change_pct = float(change_pct)
+
+            if abs(change_pct) >= SIGNIFICANT_MOVE_PCT:
+                direction = "up" if change_pct > 0 else "down"
+                price = quote.get("c", quote.get("price", 0))
+                await self.insight_repo.create(
+                    discord_id=user_id,
+                    insight_type="price_movement",
+                    title=f"{symbol} moved {change_pct:+.1f}% today",
+                    content=f"**{symbol}** is {direction} **{change_pct:+.1f}%** today (${price:.2f}). This is a significant move worth monitoring.",
+                    symbols=[symbol],
+                )
+                count += 1
         return count
 
     async def _check_upcoming_earnings(self, user_id: int, symbols: list[str]) -> int:
@@ -221,8 +241,8 @@ class ProactiveInsightGenerator:
                 if latest and latest.get("date"):
                     try:
                         earn_date = datetime.fromisoformat(str(latest["date"]).replace("Z", "+00:00"))
-                        now = datetime.utcnow()
-                        days_until = (earn_date.replace(tzinfo=None) - now).days
+                        now = datetime.now(UTC)
+                        days_until = (earn_date.replace(tzinfo=None) - now.replace(tzinfo=None)).days
                         if 0 < days_until <= 7:
                             await self.insight_repo.create(
                                 discord_id=user_id,
@@ -241,7 +261,7 @@ class ProactiveInsightGenerator:
     async def _check_earnings_calendar_week(self, user_id: int, symbols: list[str]) -> int:
         """Generate a weekly earnings calendar alert if multiple holdings report this week."""
         reporting_this_week = []
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         for symbol in symbols:
             try:
@@ -252,7 +272,7 @@ class ProactiveInsightGenerator:
                 if latest and latest.get("date"):
                     try:
                         earn_date = datetime.fromisoformat(str(latest["date"]).replace("Z", "+00:00"))
-                        days_until = (earn_date.replace(tzinfo=None) - now).days
+                        days_until = (earn_date.replace(tzinfo=None) - now.replace(tzinfo=None)).days
                         if 0 < days_until <= 7:
                             day_name = earn_date.strftime("%A")
                             reporting_this_week.append((symbol, days_until, day_name))
@@ -335,7 +355,7 @@ class ProactiveInsightGenerator:
             return 0
 
         count = 0
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         for symbol in symbols[:10]:
             try:
@@ -353,7 +373,7 @@ class ProactiveInsightGenerator:
                 # Check if this earnings report dropped in the last 48 hours
                 try:
                     earn_date = datetime.fromisoformat(str(period).replace("Z", "+00:00"))
-                    hours_since = (now - earn_date.replace(tzinfo=None)).total_seconds() / 3600
+                    hours_since = (now.replace(tzinfo=None) - earn_date.replace(tzinfo=None)).total_seconds() / 3600
                 except (ValueError, TypeError):
                     continue
 
@@ -460,11 +480,11 @@ class ProactiveInsightGenerator:
         """Remind about old unresolved action items."""
         count = 0
         items = await self.notes_repo.get_active_action_items(user_id)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         for item in items:
             created = item["created_at"].replace(tzinfo=None)
-            days_old = (now - created).days
+            days_old = (now.replace(tzinfo=None) - created).days
             if days_old >= 3:
                 symbols = item.get("symbols", [])
                 await self.insight_repo.create(
