@@ -281,6 +281,57 @@ class DataManager:
             return await self.arxiv.search_papers(query=query, max_results=max_results)
         return await self.arxiv.get_recent_papers(max_results=max_results)
 
+    async def get_news_batch(
+        self, symbols: list[str], limit: int = 15
+    ) -> list[dict[str, Any]]:
+        """Get news for multiple symbols in a single MarketAux API call.
+
+        Falls back to per-symbol Finnhub if MarketAux fails.
+        """
+        key = f"news:batch:{','.join(sorted(symbols))}:{limit}"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+
+        data: list[dict[str, Any]] = []
+        # MarketAux supports comma-separated symbols in one call
+        try:
+            joined = ",".join(symbols)
+            data = await self.marketaux.get_news(symbols=joined, limit=limit)
+            log.info("marketaux_batch_news", symbols=len(symbols), articles=len(data))
+        except Exception:
+            pass
+
+        # Fallback: per-symbol Finnhub (more expensive but always works)
+        if not data:
+            from datetime import datetime, timedelta
+            to_date = datetime.utcnow().strftime("%Y-%m-%d")
+            from_date = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+            for symbol in symbols:
+                try:
+                    finnhub_articles = await self.finnhub.get_company_news(symbol, from_date, to_date)
+                    log.info("finnhub_news_fallback", symbol=symbol, articles=len(finnhub_articles))
+                    data.extend(
+                        {
+                            "title": a.get("headline", ""),
+                            "description": a.get("summary", ""),
+                            "snippet": a.get("summary", "")[:200],
+                            "url": a.get("url", ""),
+                            "source": a.get("source", ""),
+                            "published_at": a.get("datetime", ""),
+                            "symbols": [symbol],
+                            "sentiment": None,
+                            "relevance": None,
+                        }
+                        for a in finnhub_articles[:5]
+                    )
+                except Exception:
+                    pass
+
+        if data:
+            self.cache.set(key, data, CACHE_TTL["news"])
+        return data
+
     async def get_news_for_sectors(
         self, sectors: str, limit: int = 10
     ) -> list[dict[str, Any]]:

@@ -23,7 +23,7 @@ class EmbedColor(int, Enum):
 API_RATE_LIMITS = {
     "finnhub": 55,        # Free tier allows 60/min — leave slim headroom
     "fred": 120,
-    "marketaux": 2,       # 100/day ≈ ~2/min conservative
+    "marketaux": 5,       # Basic plan: 250/day — batched calls keep usage low
     "fmp": 30,
     "sec_edgar": 10,      # 10 req/sec but we go conservative
     "arxiv": 10,

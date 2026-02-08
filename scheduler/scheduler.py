@@ -69,24 +69,22 @@ class Scheduler:
 
     @tasks.loop(seconds=NEWS_POLL_INTERVAL)
     async def _poll_news(self) -> None:
-        """Poll for new financial news per watchlist symbol."""
+        """Poll for new financial news.
+
+        Uses a single batched MarketAux call (1 API request for all symbols)
+        to conserve the 250 req/day budget.  Falls back to per-symbol Finnhub.
+        """
         try:
             watchlist_repo = WatchlistRepository(self.bot.db_pool)
             all_symbols = await watchlist_repo.get_all_symbols()
             if not all_symbols:
                 return
 
-            symbols_list = list(all_symbols)[:5]  # Cap to 5 to save Finnhub budget
+            symbols_list = list(all_symbols)[:10]
             log.info("poll_news_start", symbols=len(symbols_list))
 
-            # Fetch news per symbol so articles come back tagged with symbols + sentiment
-            all_articles = []
-            for symbol in symbols_list:
-                try:
-                    articles = await self.dm.get_news(symbol=symbol, limit=5)
-                    all_articles.extend(articles)
-                except Exception as e:
-                    log.debug("poll_news_symbol_error", symbol=symbol, error=str(e))
+            # Single batched call — 1 MarketAux request for all symbols
+            all_articles = await self.dm.get_news_batch(symbols_list, limit=15)
 
             log.info("poll_news_fetched", articles=len(all_articles))
             notifications = process_news_articles(all_articles, all_symbols)
