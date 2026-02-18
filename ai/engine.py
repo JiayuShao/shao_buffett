@@ -6,12 +6,12 @@ import asyncpg
 import anthropic
 import structlog
 from typing import Any, Callable, Awaitable
-from ai.models import ModelConfig, OPUS
+from ai.models import ModelConfig, HAIKU, OPUS
 from ai.router import route_request, record_opus_call
-from ai.tools import FINANCIAL_TOOLS
+from ai.tools import FINANCIAL_TOOLS, ROUTINE_TOOLS
 from ai.conversation import ConversationManager
 from ai.multimodal import process_attachments
-from ai.prompts.system import BASE_SYSTEM_PROMPT, RESEARCH_SYSTEM_PROMPT
+from ai.prompts.system import BASE_SYSTEM_PROMPT
 from config.settings import settings
 from data.manager import DataManager
 from storage.repositories.notes_repo import NotesRepository
@@ -19,6 +19,7 @@ from storage.repositories.notes_repo import NotesRepository
 log = structlog.get_logger(__name__)
 
 MAX_TOOL_ROUNDS = 10  # Max agentic tool-use iterations
+MAX_TOOL_RESULT_CHARS = 12_000  # ~3K tokens — caps large tool results
 
 
 class AIEngine:
@@ -130,7 +131,10 @@ class AIEngine:
         system_blocks = [
             {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
         ]
-        cached_tools = list(FINANCIAL_TOOLS)
+
+        # Dynamic tool filtering: Haiku gets a smaller tool set to save tokens
+        tools_for_model = ROUTINE_TOOLS if model_config == HAIKU else FINANCIAL_TOOLS
+        cached_tools = list(tools_for_model)
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
         for round_num in range(MAX_TOOL_ROUNDS):
@@ -143,12 +147,11 @@ class AIEngine:
                     "tools": cached_tools,
                 }
                 if model_config.thinking_budget:
-                    create_params["thinking"] = {
-                        "type": "enabled",
-                        "budget_tokens": model_config.thinking_budget,
-                    }
+                    create_params["thinking"] = {"type": "adaptive"}
 
-                response = await self.client.messages.create(**create_params)
+                # Always stream to avoid SDK timeout on long requests (extended thinking)
+                async with self.client.messages.stream(**create_params) as stream:
+                    response = await stream.get_final_message()
             except anthropic.APIError as e:
                 log.error("anthropic_api_error", error=str(e), model=model_config.model_id)
                 return f"Sorry, I encountered an API error: {e.message}"
@@ -174,7 +177,7 @@ class AIEngine:
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": json.dumps(result, default=str),
+                        "content": self._cap_result(result),
                     }
                     for block, result in zip(tool_blocks, results)
                 ]
@@ -194,6 +197,14 @@ class AIEngine:
                 return "\n".join(text_parts) if text_parts else "I wasn't able to generate a response."
 
         return "I reached the maximum number of analysis steps. Here's what I found so far."
+
+    @staticmethod
+    def _cap_result(result: Any) -> str:
+        """Serialize tool result and truncate if too large."""
+        result_str = json.dumps(result, default=str)
+        if len(result_str) > MAX_TOOL_RESULT_CHARS:
+            return result_str[:MAX_TOOL_RESULT_CHARS] + '... [truncated]'
+        return result_str
 
     async def _stream_final_response(
         self,
@@ -231,22 +242,20 @@ class AIEngine:
         system_prompt: str | None = None,
     ) -> tuple[ModelConfig, str, list[dict[str, Any]]]:
         """Common setup for chat() and chat_stream(): summarize, build context, route model."""
-        await self.conversation.summarize_if_needed(user_id, channel_id, self)
+        # Fire-and-forget summarization — don't block the user's response
+        asyncio.create_task(
+            self._safe_summarize(user_id, channel_id)
+        )
 
-        profile = await self.conversation.get_user_profile(user_id)
-        watchlist = await self.conversation.get_user_watchlist(user_id)
-        history = await self.conversation.get_history(user_id, channel_id)
+        # Parallelize all independent DB queries
+        profile, watchlist, history, portfolio_symbols = await asyncio.gather(
+            self.conversation.get_user_profile(user_id),
+            self.conversation.get_user_watchlist(user_id),
+            self.conversation.get_history(user_id, channel_id),
+            self._get_portfolio_symbols(user_id),
+        )
 
-        # Check portfolio for smarter routing
-        has_portfolio = False
-        try:
-            from storage.repositories.portfolio_repo import PortfolioRepository
-            portfolio_repo = PortfolioRepository(self.db_pool)
-            portfolio_symbols = await portfolio_repo.get_symbols(user_id)
-            has_portfolio = len(portfolio_symbols) > 0
-        except Exception:
-            pass
-
+        has_portfolio = len(portfolio_symbols) > 0
         model_config = route_request(content, force_tier=force_model, has_portfolio=has_portfolio)
 
         # Build system prompt with user context
@@ -282,6 +291,22 @@ class AIEngine:
 
         return model_config, sys_prompt, messages
 
+    async def _safe_summarize(self, user_id: int, channel_id: int) -> None:
+        """Run summarization with error handling for fire-and-forget usage."""
+        try:
+            await self.conversation.summarize_if_needed(user_id, channel_id, self)
+        except Exception as e:
+            log.warning("background_summarize_error", user_id=user_id, error=str(e))
+
+    async def _get_portfolio_symbols(self, user_id: int) -> list[str]:
+        """Get portfolio symbols for routing, returning [] on failure."""
+        try:
+            from storage.repositories.portfolio_repo import PortfolioRepository
+            repo = PortfolioRepository(self.db_pool)
+            return await repo.get_symbols(user_id)
+        except Exception:
+            return []
+
     async def _finalize_chat(
         self,
         user_id: int,
@@ -304,8 +329,13 @@ class AIEngine:
     async def _inject_user_context(self, user_id: int, sys_prompt: str) -> str:
         """Inject user's notes and portfolio into the system prompt."""
         try:
-            recent_notes = await self.notes_repo.get_recent(user_id, limit=15)
-            action_items = await self.notes_repo.get_active_action_items(user_id)
+            # Parallelize all 4 independent DB queries
+            recent_notes, action_items, holdings, fin_profile = await asyncio.gather(
+                self.notes_repo.get_recent(user_id, limit=15),
+                self.notes_repo.get_active_action_items(user_id),
+                self._safe_get_holdings(user_id),
+                self._safe_get_financial_profile(user_id),
+            )
 
             if recent_notes:
                 notes_text = "\n## Your Notes About This User\n"
@@ -321,41 +351,49 @@ class AIEngine:
                     items_text += f"- #{item['id']}{symbols}: {item['content']}\n"
                 sys_prompt += items_text
 
-            try:
-                from storage.repositories.portfolio_repo import PortfolioRepository, FinancialProfileRepository
-                portfolio_repo = PortfolioRepository(self.db_pool)
-                profile_repo = FinancialProfileRepository(self.db_pool)
+            if holdings:
+                portfolio_text = "\n## User's Portfolio Holdings\n"
+                for h in holdings:
+                    cost = f" @ ${h['cost_basis']:.2f}" if h.get('cost_basis') else ""
+                    acct = f" ({h['account_type']})" if h.get('account_type') else ""
+                    portfolio_text += f"- {h['symbol']}: {h['shares']} shares{cost}{acct}\n"
+                sys_prompt += portfolio_text
 
-                holdings = await portfolio_repo.get_holdings(user_id)
-                fin_profile = await profile_repo.get(user_id)
-
-                if holdings:
-                    portfolio_text = "\n## User's Portfolio Holdings\n"
-                    for h in holdings:
-                        cost = f" @ ${h['cost_basis']:.2f}" if h.get('cost_basis') else ""
-                        acct = f" ({h['account_type']})" if h.get('account_type') else ""
-                        portfolio_text += f"- {h['symbol']}: {h['shares']} shares{cost}{acct}\n"
-                    sys_prompt += portfolio_text
-
-                if fin_profile:
-                    profile_parts = []
-                    if fin_profile.get("investment_horizon"):
-                        profile_parts.append(f"Investment horizon: {fin_profile['investment_horizon']}")
-                    if fin_profile.get("tax_bracket"):
-                        profile_parts.append(f"Tax bracket: {fin_profile['tax_bracket']}")
-                    if fin_profile.get("goals"):
-                        goals = fin_profile["goals"]
-                        if isinstance(goals, list):
-                            profile_parts.append(f"Goals: {', '.join(goals)}")
-                    if profile_parts:
-                        sys_prompt += "\n## User's Financial Profile\n" + "\n".join(f"- {p}" for p in profile_parts) + "\n"
-            except ImportError:
-                pass  # Portfolio repo not yet created (Phase 2)
+            if fin_profile:
+                profile_parts = []
+                if fin_profile.get("investment_horizon"):
+                    profile_parts.append(f"Investment horizon: {fin_profile['investment_horizon']}")
+                if fin_profile.get("tax_bracket"):
+                    profile_parts.append(f"Tax bracket: {fin_profile['tax_bracket']}")
+                if fin_profile.get("goals"):
+                    goals = fin_profile["goals"]
+                    if isinstance(goals, list):
+                        profile_parts.append(f"Goals: {', '.join(goals)}")
+                if profile_parts:
+                    sys_prompt += "\n## User's Financial Profile\n" + "\n".join(f"- {p}" for p in profile_parts) + "\n"
 
         except Exception as e:
             log.warning("context_injection_error", error=str(e))
 
         return sys_prompt
+
+    async def _safe_get_holdings(self, user_id: int) -> list[dict[str, Any]]:
+        """Get portfolio holdings, returning [] on failure or missing repo."""
+        try:
+            from storage.repositories.portfolio_repo import PortfolioRepository
+            repo = PortfolioRepository(self.db_pool)
+            return await repo.get_holdings(user_id)
+        except Exception:
+            return []
+
+    async def _safe_get_financial_profile(self, user_id: int) -> dict[str, Any] | None:
+        """Get financial profile, returning None on failure or missing repo."""
+        try:
+            from storage.repositories.portfolio_repo import FinancialProfileRepository
+            repo = FinancialProfileRepository(self.db_pool)
+            return await repo.get(user_id)
+        except Exception:
+            return None
 
     # ── Activity logging ──
 
@@ -434,11 +472,6 @@ class AIEngine:
                     return await self.data_manager.get_research_papers(
                         query=tool_input.get("query"),
                         max_results=tool_input.get("max_results", 10),
-                    )
-                case "get_polymarket":
-                    return await self.data_manager.get_polymarket(
-                        query=tool_input["query"],
-                        limit=tool_input.get("limit", 5),
                     )
                 case "get_trending_stocks":
                     return await self.data_manager.get_trending_stocks(

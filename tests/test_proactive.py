@@ -7,10 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from scheduler.proactive import (
     ProactiveInsightGenerator,
     SIGNIFICANT_MOVE_PCT,
-    POLYMARKET_MIN_VOLUME,
-    POLYMARKET_HIGH_VOLUME,
-    POLYMARKET_EXTREME_HIGH,
-    POLYMARKET_EXTREME_LOW,
     NEWS_STRONG_SENTIMENT,
     MAX_NEWS_INSIGHTS_PER_USER,
     _content_hash,
@@ -355,49 +351,6 @@ class TestDispatchPending(TestProactiveInsightGenerator):
         generator.insight_repo.mark_delivered.assert_not_awaited()
 
 
-class TestIsMeaningfulPolymarket:
-    def test_high_volume_is_meaningful(self):
-        market = {"volume": 150_000, "outcome_prices": "[0.50, 0.50]"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is True
-
-    def test_extreme_high_prob_is_meaningful(self):
-        market = {"volume": 60_000, "outcome_prices": "[0.90, 0.10]"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is True
-
-    def test_extreme_low_prob_is_meaningful(self):
-        market = {"volume": 60_000, "outcome_prices": "[0.10, 0.90]"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is True
-
-    def test_low_volume_not_meaningful(self):
-        market = {"volume": 10_000, "outcome_prices": "[0.50, 0.50]"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is False
-
-    def test_moderate_volume_moderate_prob_not_meaningful(self):
-        market = {"volume": 60_000, "outcome_prices": "[0.50, 0.50]"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is False
-
-    def test_bad_outcome_prices_not_meaningful(self):
-        market = {"volume": 60_000, "outcome_prices": "invalid"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is False
-
-    def test_missing_volume(self):
-        market = {"outcome_prices": "[0.90, 0.10]"}
-        assert ProactiveInsightGenerator._is_meaningful_polymarket(market) is False
-
-
-class TestFormatPolymarketProbability:
-    def test_formats_binary_market(self):
-        market = {"outcome_prices": "[0.65, 0.35]", "outcomes": '["Yes", "No"]'}
-        result = ProactiveInsightGenerator._format_polymarket_probability(market)
-        assert "Yes: 65%" in result
-        assert "No: 35%" in result
-
-    def test_handles_invalid_json(self):
-        market = {"outcome_prices": "bad", "outcomes": "bad"}
-        result = ProactiveInsightGenerator._format_polymarket_probability(market)
-        assert result == ""
-
-
 class TestContentHash:
     def test_produces_16_char_hex(self):
         h = _content_hash("test-slug")
@@ -409,71 +362,6 @@ class TestContentHash:
 
     def test_different_inputs_different_hash(self):
         assert _content_hash("abc") != _content_hash("xyz")
-
-
-class TestCheckPolymarketSignals(TestProactiveInsightGenerator):
-    async def test_creates_insight_for_meaningful_market(self, generator, mock_data_manager):
-        mock_data_manager.get_polymarket = AsyncMock(return_value=[{
-            "question": "Will AI regulation pass?",
-            "outcome_prices": "[0.70, 0.30]",
-            "outcomes": '["Yes", "No"]',
-            "volume": 200_000,
-            "slug": "ai-regulation",
-        }])
-        generator.insight_repo.create = AsyncMock(return_value=1)
-        generator.insight_repo.was_recently_created = AsyncMock(return_value=False)
-
-        count = await generator._check_polymarket_signals(12345, ["AI"], [])
-        assert count >= 1
-        call_kwargs = generator.insight_repo.create.call_args[1]
-        assert call_kwargs["insight_type"] == "polymarket_signal"
-        assert "content_hash" in call_kwargs
-        assert "AI regulation" in call_kwargs["title"]
-
-    async def test_skips_low_volume_market(self, generator, mock_data_manager):
-        mock_data_manager.get_polymarket = AsyncMock(return_value=[{
-            "question": "Will X happen?",
-            "outcome_prices": "[0.50, 0.50]",
-            "outcomes": '["Yes", "No"]',
-            "volume": 1000,
-            "slug": "low-vol",
-        }])
-        generator.insight_repo.create = AsyncMock(return_value=1)
-        generator.insight_repo.was_recently_created = AsyncMock(return_value=False)
-
-        count = await generator._check_polymarket_signals(12345, ["AI"], [])
-        assert count == 0
-
-    async def test_deduplicates_recent_insights(self, generator, mock_data_manager):
-        mock_data_manager.get_polymarket = AsyncMock(return_value=[{
-            "question": "Will AI regulation pass?",
-            "outcome_prices": "[0.70, 0.30]",
-            "outcomes": '["Yes", "No"]',
-            "volume": 200_000,
-            "slug": "ai-regulation",
-        }])
-        generator.insight_repo.create = AsyncMock(return_value=1)
-        generator.insight_repo.was_recently_created = AsyncMock(return_value=True)
-
-        count = await generator._check_polymarket_signals(12345, ["AI"], [])
-        assert count == 0
-        generator.insight_repo.create.assert_not_awaited()
-
-    async def test_includes_watchlist_symbols_as_queries(self, generator, mock_data_manager):
-        mock_data_manager.get_polymarket = AsyncMock(return_value=[])
-        generator.insight_repo.was_recently_created = AsyncMock(return_value=False)
-
-        await generator._check_polymarket_signals(12345, [], ["AAPL", "TSLA"])
-        # Should query for AAPL and TSLA
-        calls = mock_data_manager.get_polymarket.call_args_list
-        queries = [c[0][0] for c in calls]
-        assert "AAPL" in queries
-        assert "TSLA" in queries
-
-    async def test_handles_api_error(self, generator, mock_data_manager):
-        mock_data_manager.get_polymarket = AsyncMock(side_effect=Exception("API down"))
-        count = await generator._check_polymarket_signals(12345, ["AI"], [])
-        assert count == 0
 
 
 class TestCheckInterestNews(TestProactiveInsightGenerator):

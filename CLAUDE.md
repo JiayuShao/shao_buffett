@@ -5,7 +5,7 @@
 - Async throughout (asyncio, aiohttp, asyncpg)
 - Multi-model routing: Haiku (routine), Sonnet (standard), Opus (deep analysis)
 - Portfolio-aware routing: upgrades to Sonnet for portfolio decisions
-- Dynamic tool filtering: Haiku gets 6 tools, Sonnet/Opus get all 25 (~1.5K token savings per Haiku request)
+- Dynamic tool filtering: Haiku gets 6 tools, Sonnet/Opus get all 24 (~1.5K token savings per Haiku request)
 - Web dashboard: Quart + Discord OAuth + Plotly.js
 - Personal analyst features: cross-conversation notes, portfolio tracking, proactive insights
 
@@ -42,10 +42,9 @@
 - FMP: fundamentals, ratios, earnings transcripts, sector performance
 - SEC EDGAR: 10-K, 10-Q, 8-K filings
 - arXiv: quantitative finance research papers
-- Polymarket: prediction market data (market-implied probabilities for macro/political/crypto events)
 
-## AI Tools (25 total)
-- 16 financial data tools (quote, profile, fundamentals, analyst, earnings, news, macro, sector, transcript, filings, papers, polymarket, trending_stocks, sentiment, technical_indicators, generate_chart)
+## AI Tools (24 total)
+- 15 financial data tools (quote, profile, fundamentals, analyst, earnings, news, macro, sector, transcript, filings, papers, trending_stocks, sentiment, technical_indicators, generate_chart)
 - 2 quantitative tools (get_factor_grades, get_portfolio_health)
 - 3 note tools (save_note, get_user_notes, resolve_action_item)
 - 4 portfolio tools (get_portfolio, update_portfolio, get_financial_profile, update_financial_profile)
@@ -78,7 +77,6 @@ python3 -m pytest tests/
   - `bot/cogs/report.py` — /report <symbol> (structured Opus-powered analyst report)
 - `ai/` — Claude API integration, model routing, tools, prompts
 - `data/` — Financial data collectors, processors, cache, rate limiter
-  - `data/collectors/polymarket.py` — Polymarket prediction market API
   - `data/processors/factor_processor.py` — Factor grade computation engine (Value, Growth, Profitability, Momentum, EPS Revisions)
 - `notifications/` — Dispatcher, formatter, filters, types
 - `scheduler/` — Periodic tasks, morning/evening briefings, proactive insights

@@ -1,25 +1,26 @@
 # Shao Buffett
 
-AI-powered personal financial analyst Discord bot. Always-on market intelligence with 25 AI tools, cross-conversation memory, portfolio tracking, and proactive insights.
+AI-powered personal financial analyst Discord bot. Always-on market intelligence with 24 AI tools, cross-conversation memory, portfolio tracking, and proactive insights.
 
 ## Features
 
-- **25 AI tools** — Real-time quotes, fundamentals, analyst data, earnings, news, macro, SEC filings, technicals, factor grades, portfolio health, and more
-- **7 financial APIs** — Finnhub, FRED, MarketAux, FMP, SEC EDGAR, arXiv, Polymarket
+- **24 AI tools** — Real-time quotes, fundamentals, analyst data, earnings, news, macro, SEC filings, technicals, factor grades, portfolio health, and more
+- **6 financial APIs** — Finnhub, FRED, MarketAux, FMP, SEC EDGAR, arXiv
 - **Cross-conversation memory** — Saves notes, preferences, and action items across sessions
 - **Portfolio tracking** — Holdings with cost basis, financial profile, and goal-aware analysis
 - **Proactive insights** — Automatically pushes price move alerts, earnings analysis, insider trade flags
 - **3-tier model routing** — Haiku (routine), Sonnet (standard), Opus (deep research) with portfolio-aware upgrades
+- **Dynamic tool filtering** — Haiku gets a reduced tool set (~1.5K fewer tokens per request)
 - **Extended thinking** — Sonnet (10K tokens) and Opus (16K tokens) for multi-step reasoning
 - **True streaming** — Real-time token streaming with tool call progress indicators
-- **Parallel tool execution** — Independent tool calls run concurrently
+- **Parallel execution** — Independent tool calls, DB queries, and API calls run concurrently
 - **Factor grades** — Sector-relative percentile ranking (A+ to F) across Value, Growth, Profitability, Momentum, EPS Revisions
 
 ## Architecture
 
 ```
 bot/          Discord bot (py-cord), slash command cogs, event handlers
-ai/           Claude API integration, model routing, 23 tools, system prompts
+ai/           Claude API integration, model routing, 24 tools, system prompts
 data/         Financial data collectors, processors, cache, rate limiter
 scheduler/    Periodic polling, morning/evening briefings, proactive insights
 notifications/  Dispatcher, formatter, filters
@@ -31,7 +32,7 @@ config/       Settings, constants, logging
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.14+
 - PostgreSQL 15+
 - Discord bot token
 - API keys: Anthropic, Finnhub, FRED, MarketAux, FMP
@@ -59,7 +60,7 @@ python3 -m bot.main
 # Development (DB only)
 docker compose up db
 
-# Production
+# Production (uses pinned requirements.lock.txt)
 docker compose up -d
 ```
 

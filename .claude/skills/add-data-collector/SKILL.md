@@ -71,7 +71,7 @@ Must match the key in `API_RATE_LIMITS` (config/constants.py). This is how the r
 Abstract method — must return `True`/`False`. Used by `DataManager.health_check()` and the `/admin health` command.
 
 ### If the API needs no key (public API)
-Skip `settings` import and `_api_key`. Example: `PolymarketCollector` uses the public Gamma API with no authentication.
+Skip `settings` import and `_api_key`. Just omit the API key handling entirely.
 
 ### If POST requests are needed
 `BaseCollector._request()` only supports GET. For POST, add a method:
@@ -103,7 +103,7 @@ self.example = ExampleCollector(self.rate_limiter)
 async def close(self) -> None:
     collectors = [
         self.finnhub, self.fred, self.marketaux, self.fmp,
-        self.sec_edgar, self.arxiv, self.polymarket,
+        self.sec_edgar, self.arxiv,
         self.example,  # <-- add here
     ]
     ...

@@ -11,7 +11,6 @@ from data.collectors.marketaux import MarketAuxCollector
 from data.collectors.fmp import FMPCollector
 from data.collectors.sec_edgar import SECEdgarCollector
 from data.collectors.arxiv_research import ArxivCollector
-from data.collectors.polymarket import PolymarketCollector
 from config.constants import API_RATE_LIMITS, CACHE_TTL
 
 log = structlog.get_logger(__name__)
@@ -35,7 +34,6 @@ class DataManager:
         self.fmp = FMPCollector(self.rate_limiter)
         self.sec_edgar = SECEdgarCollector(self.rate_limiter)
         self.arxiv = ArxivCollector(self.rate_limiter)
-        self.polymarket = PolymarketCollector(self.rate_limiter)
 
     async def start(self) -> None:
         """Initialize all collectors."""
@@ -43,7 +41,7 @@ class DataManager:
 
     async def close(self) -> None:
         """Close all collector sessions."""
-        collectors = [self.finnhub, self.fred, self.marketaux, self.fmp, self.sec_edgar, self.arxiv, self.polymarket]
+        collectors = [self.finnhub, self.fred, self.marketaux, self.fmp, self.sec_edgar, self.arxiv]
         for collector in collectors:
             await collector.close()
         await self.finnhub.stop_websocket()
@@ -59,7 +57,6 @@ class DataManager:
             "fmp": self.fmp,
             "sec_edgar": self.sec_edgar,
             "arxiv": self.arxiv,
-            "polymarket": self.polymarket,
         }
         for name, collector in checks.items():
             try:
@@ -103,15 +100,19 @@ class DataManager:
         cached = self.cache.get(key)
         if cached:
             return cached
-        try:
-            metrics = await self.fmp.get_key_metrics(symbol, limit=1)
-            ratios = await self.fmp.get_ratios(symbol, limit=1)
-            data = {
-                "metrics": metrics[0] if metrics else {},
-                "ratios": ratios[0] if ratios else {},
-            }
-        except Exception:
-            data = {"metrics": {}, "ratios": {}}
+        metrics, ratios = await asyncio.gather(
+            self.fmp.get_key_metrics(symbol, limit=1),
+            self.fmp.get_ratios(symbol, limit=1),
+            return_exceptions=True,
+        )
+        if isinstance(metrics, Exception):
+            metrics = []
+        if isinstance(ratios, Exception):
+            ratios = []
+        data = {
+            "metrics": metrics[0] if metrics else {},
+            "ratios": ratios[0] if ratios else {},
+        }
         self.cache.set(key, data, CACHE_TTL["fundamentals"])
         return data
 
@@ -342,18 +343,6 @@ class DataManager:
             return cached
         data = await self.marketaux.get_news(sectors=sectors, limit=limit)
         self.cache.set(key, data, CACHE_TTL["news"])
-        return data
-
-    async def get_polymarket(
-        self, query: str, limit: int = 5
-    ) -> list[dict[str, Any]]:
-        """Get prediction market data from Polymarket."""
-        key = f"polymarket:{query}:{limit}"
-        cached = self.cache.get(key)
-        if cached:
-            return cached
-        data = await self.polymarket.search_markets(query, limit=limit)
-        self.cache.set(key, data, CACHE_TTL["news"])  # Same TTL as news (5 min)
         return data
 
     async def get_technical_indicators(self, symbol: str) -> dict[str, Any]:

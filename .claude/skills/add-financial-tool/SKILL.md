@@ -107,7 +107,7 @@ async def get_options_chain(
 | `filing` | 1 day | SEC filings |
 
 ### If using a new collector
-If the data comes from a new API, create a collector first (see the `add-data-collector` skill). Otherwise, call existing collectors: `self.finnhub`, `self.fmp`, `self.marketaux`, `self.fred`, `self.sec_edgar`, `self.arxiv`, `self.polymarket`.
+If the data comes from a new API, create a collector first (see the `add-data-collector` skill). Otherwise, call existing collectors: `self.finnhub`, `self.fmp`, `self.marketaux`, `self.fred`, `self.sec_edgar`, `self.arxiv`.
 
 ## Checklist
 

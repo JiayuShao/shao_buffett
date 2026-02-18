@@ -20,8 +20,7 @@ TOOL_LABELS = {
     "get_earnings_transcript": "Reading transcript",
     "get_sec_filings": "Checking SEC filings",
     "get_research_papers": "Searching research",
-    "get_polymarket": "Checking prediction markets",
-    "get_trending_stocks": "Checking what's trending",
+"get_trending_stocks": "Checking what's trending",
     "get_sentiment": "Analyzing sentiment",
     "get_technical_indicators": "Running technicals",
     "generate_chart": "Generating chart",
@@ -48,6 +47,12 @@ def setup_events(bot: ShaoBuffettBot) -> None:
 
         # Ignore messages from other bots
         if message.author.bot:
+            return
+
+        # Only respond when @mentioned or in DMs (multi-agent support)
+        is_dm = isinstance(message.channel, discord.DMChannel)
+        is_mentioned = bot.user is not None and bot.user.mentioned_in(message)
+        if not is_dm and not is_mentioned:
             return
 
         # Handle as free-form chat via AI engine

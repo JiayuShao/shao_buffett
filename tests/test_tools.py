@@ -8,8 +8,8 @@ class TestToolDefinitions:
     """Verify all tool definitions are well-formed."""
 
     def test_tool_count(self):
-        """Should have 25 tools total (16 financial + 2 quant + 3 notes + 4 portfolio)."""
-        assert len(FINANCIAL_TOOLS) == 25
+        """Should have 24 tools total (15 financial + 2 quant + 3 notes + 4 portfolio)."""
+        assert len(FINANCIAL_TOOLS) == 24
 
     def test_all_tools_have_required_fields(self):
         for tool in FINANCIAL_TOOLS:
@@ -50,10 +50,6 @@ class TestFinancialToolNames:
             "get_research_papers", "generate_chart",
         }
         assert expected.issubset(names)
-
-    def test_polymarket_tool(self):
-        names = self._tool_names()
-        assert "get_polymarket" in names
 
     def test_note_tools(self):
         names = self._tool_names()
@@ -105,14 +101,3 @@ class TestUpdatePortfolioTool:
         assert "account_type" in tool["input_schema"]["properties"]
 
 
-class TestPolymarketTool:
-    def _get_tool(self, name):
-        return next(t for t in FINANCIAL_TOOLS if t["name"] == name)
-
-    def test_requires_query(self):
-        tool = self._get_tool("get_polymarket")
-        assert "query" in tool["input_schema"]["required"]
-
-    def test_has_limit(self):
-        tool = self._get_tool("get_polymarket")
-        assert "limit" in tool["input_schema"]["properties"]

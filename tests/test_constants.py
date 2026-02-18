@@ -52,12 +52,8 @@ class TestRiskTolerance:
 
 
 class TestAPIRateLimits:
-    def test_polymarket_rate_limit(self):
-        assert "polymarket" in API_RATE_LIMITS
-        assert API_RATE_LIMITS["polymarket"] == 30
-
     def test_all_apis_have_limits(self):
-        expected_apis = {"finnhub", "fred", "marketaux", "fmp", "sec_edgar", "arxiv", "polymarket"}
+        expected_apis = {"finnhub", "fred", "marketaux", "fmp", "sec_edgar", "arxiv"}
         assert expected_apis.issubset(set(API_RATE_LIMITS.keys()))
 
     def test_limits_are_positive(self):

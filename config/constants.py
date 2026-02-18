@@ -27,7 +27,6 @@ API_RATE_LIMITS = {
     "fmp": 30,
     "sec_edgar": 10,      # 10 req/sec but we go conservative
     "arxiv": 10,
-    "polymarket": 30,
 }
 
 # Polling intervals (seconds)

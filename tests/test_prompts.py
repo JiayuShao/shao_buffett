@@ -36,9 +36,6 @@ class TestBaseSystemPrompt:
         assert "Bull Case / Bear Case" in BASE_SYSTEM_PROMPT
         assert "Self-Critique" in BASE_SYSTEM_PROMPT
 
-    def test_contains_polymarket_guidance(self):
-        assert "Polymarket" in BASE_SYSTEM_PROMPT
-
     def test_contains_portfolio_tracking(self):
         assert "Portfolio tracking" in BASE_SYSTEM_PROMPT
 

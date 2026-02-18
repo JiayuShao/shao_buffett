@@ -223,30 +223,6 @@ FINANCIAL_TOOLS = [
         },
     },
     {
-        "name": "get_polymarket",
-        "description": (
-            "Get prediction market data from Polymarket — market-implied probabilities for macro, political, "
-            "crypto, or other events. Use when discussing Fed rate decisions, elections, regulatory outcomes, "
-            "recession odds, or any event where 'what does the market think?' is relevant. "
-            "NOT for stock-specific data — use get_quote/get_fundamentals for that."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query for prediction markets (e.g. 'Fed rate cut', 'Bitcoin 100k', 'recession 2025')",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of markets to return (default 5)",
-                    "default": 5,
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
         "name": "get_trending_stocks",
         "description": (
             "Get stocks currently trending in financial news, ranked by news volume with sentiment breakdown. "
@@ -547,3 +523,10 @@ FINANCIAL_TOOLS = [
         },
     },
 ]
+
+# Subset of tools for Haiku (routine) requests — saves ~1.5K tokens per call
+ROUTINE_TOOL_NAMES = {
+    "get_quote", "get_company_profile", "get_news", "get_trending_stocks",
+    "save_note", "get_user_notes",
+}
+ROUTINE_TOOLS = [t for t in FINANCIAL_TOOLS if t["name"] in ROUTINE_TOOL_NAMES]

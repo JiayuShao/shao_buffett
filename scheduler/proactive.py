@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 import structlog
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 import asyncpg
 from ai.engine import AIEngine
 from data.manager import DataManager
@@ -21,27 +21,9 @@ log = structlog.get_logger(__name__)
 
 # Thresholds
 SIGNIFICANT_MOVE_PCT = 3.0  # >3% daily move triggers alert
-POLYMARKET_MIN_VOLUME = 50_000
-POLYMARKET_HIGH_VOLUME = 100_000
-POLYMARKET_EXTREME_HIGH = 0.85
-POLYMARKET_EXTREME_LOW = 0.15
 NEWS_STRONG_SENTIMENT = 0.4
 MAX_NEWS_INSIGHTS_PER_USER = 3
 INSIDER_SIGNIFICANT_VALUE = 500_000  # $500K+ insider transactions
-
-# Maps user interests to Polymarket search queries
-INTEREST_POLYMARKET_QUERIES: dict[str, list[str]] = {
-    "Technology": ["tech stocks", "technology"],
-    "AI": ["artificial intelligence", "AI"],
-    "Space": ["space", "SpaceX"],
-    "Semiconductor": ["semiconductor", "chips"],
-    "Energy": ["energy", "oil"],
-    "Robotics": ["robotics", "automation"],
-    "Crypto": ["bitcoin", "crypto"],
-    "Healthcare": ["healthcare", "pharma"],
-    "Finance": ["banking", "interest rates"],
-    "EV": ["electric vehicles", "EV"],
-}
 
 # Maps user interests to MarketAux industry parameter values
 INTEREST_MARKETAUX_SECTORS: dict[str, str] = {
@@ -183,10 +165,7 @@ class ProactiveInsightGenerator:
             ])
         check_coros.append(self._check_stale_action_items(user_id))
         if interests:
-            check_coros.extend([
-                self._check_polymarket_signals(user_id, interests, all_symbols),
-                self._check_interest_news(user_id, interests, all_symbols),
-            ])
+            check_coros.append(self._check_interest_news(user_id, interests, all_symbols))
 
         results = await asyncio.gather(*check_coros, return_exceptions=True)
         for r in results:
@@ -496,92 +475,6 @@ class ProactiveInsightGenerator:
                 )
                 count += 1
         return count
-
-    async def _check_polymarket_signals(
-        self, user_id: int, interests: list[str], symbols: list[str]
-    ) -> int:
-        """Check Polymarket for meaningful prediction markets matching user interests."""
-        count = 0
-        queries: list[str] = []
-
-        for interest in interests:
-            queries.extend(INTEREST_POLYMARKET_QUERIES.get(interest, []))
-
-        for symbol in symbols[:5]:
-            queries.append(symbol)
-
-        queries = list(dict.fromkeys(queries))
-
-        for query in queries:
-            try:
-                markets = await self.dm.get_polymarket(query, limit=3)
-                for market in markets:
-                    if not self._is_meaningful_polymarket(market):
-                        continue
-
-                    slug = market.get("slug", "")
-                    ch = _content_hash(slug)
-                    if await self.insight_repo.was_recently_created(
-                        user_id, "polymarket_signal", ch
-                    ):
-                        continue
-
-                    probability = self._format_polymarket_probability(market)
-                    volume = float(market.get("volume", 0))
-                    question = market.get("question", "Unknown market")
-                    link = f"https://polymarket.com/event/{slug}" if slug else ""
-
-                    content = f"**{question}**\n{probability}\nVolume: ${volume:,.0f}"
-                    if link:
-                        content += f"\n[View on Polymarket]({link})"
-
-                    await self.insight_repo.create(
-                        discord_id=user_id,
-                        insight_type="polymarket_signal",
-                        title=f"Prediction: {question[:80]}",
-                        content=content,
-                        content_hash=ch,
-                    )
-                    count += 1
-            except Exception as e:
-                log.debug("polymarket_check_error", query=query, error=str(e))
-
-        return count
-
-    @staticmethod
-    def _is_meaningful_polymarket(market: dict) -> bool:
-        """Filter for markets with sufficient volume and interesting probabilities."""
-        volume = float(market.get("volume", 0))
-        if volume < POLYMARKET_MIN_VOLUME:
-            return False
-
-        if volume >= POLYMARKET_HIGH_VOLUME:
-            return True
-
-        try:
-            prices = json.loads(market.get("outcome_prices", "[]"))
-            for p in prices:
-                p_val = float(p)
-                if p_val >= POLYMARKET_EXTREME_HIGH or p_val <= POLYMARKET_EXTREME_LOW:
-                    return True
-        except (json.JSONDecodeError, ValueError, TypeError):
-            pass
-
-        return False
-
-    @staticmethod
-    def _format_polymarket_probability(market: dict) -> str:
-        """Format outcome prices for display."""
-        try:
-            prices = json.loads(market.get("outcome_prices", "[]"))
-            outcomes = json.loads(market.get("outcomes", "[]"))
-            parts = []
-            for outcome, price in zip(outcomes, prices):
-                pct = float(price) * 100
-                parts.append(f"{outcome}: {pct:.0f}%")
-            return " | ".join(parts)
-        except (json.JSONDecodeError, ValueError, TypeError):
-            return ""
 
     async def _check_interest_news(
         self, user_id: int, interests: list[str], symbols: list[str]

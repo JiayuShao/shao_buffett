@@ -148,10 +148,6 @@ def mock_data_manager():
     dm.get_research_papers = AsyncMock(return_value=[
         {"title": "Deep Learning for Portfolio", "authors": ["Smith", "Jones"], "pdf_url": "https://arxiv.org/pdf/1234"},
     ])
-    dm.get_polymarket = AsyncMock(return_value=[
-        {"question": "Will the Fed cut rates?", "outcome_prices": "[0.65, 0.35]",
-         "outcomes": '["Yes", "No"]', "volume": 1500000, "liquidity": 500000, "slug": "fed-rate-cut"},
-    ])
     dm.get_news_for_sectors = AsyncMock(return_value=[
         {"title": "Tech sector surges", "source": "Reuters", "sentiment": 0.7,
          "url": "https://example.com/tech", "symbols": [], "description": "Tech rally continues"},
