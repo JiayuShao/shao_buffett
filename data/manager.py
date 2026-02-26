@@ -117,22 +117,19 @@ class DataManager:
         return data
 
     async def get_analyst_data(self, symbol: str) -> dict[str, Any]:
-        """Get analyst recommendations (Finnhub) + estimates (FMP)."""
+        """Get analyst recommendations (Finnhub)."""
         key = f"analyst:{symbol}"
         cached = self.cache.get(key)
         if cached:
             return cached
 
-        # Finnhub: recommendations (free). FMP: estimates (free tier).
+        # Finnhub: recommendations (free).
         # upgrade-downgrade and price-target are Finnhub premium — skipped.
-        recs, estimates = await asyncio.gather(
-            self.finnhub.get_analyst_recommendations(symbol),
-            self.fmp.get_analyst_estimates(symbol),
-            return_exceptions=True,
-        )
+        # FMP analyst-estimates requires paid plan (402) — skipped from polling.
+        recs = await self.finnhub.get_analyst_recommendations(symbol)
         data = {
             "recommendations": (recs[:5] if isinstance(recs, list) else []),
-            "estimates": (estimates[:3] if isinstance(estimates, list) else []),
+            "estimates": [],
             "upgrades_downgrades": [],
         }
         self.cache.set(key, data, CACHE_TTL["analyst"])

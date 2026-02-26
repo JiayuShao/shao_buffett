@@ -512,7 +512,7 @@ class FactorGradeProcessor:
         estimates = analyst.get("estimates", [])
         if estimates and len(estimates) >= 1:
             latest_est = estimates[0]
-            est_eps = latest_est.get("estimatedEpsAvg")
+            est_eps = latest_est.get("epsAvg") or latest_est.get("estimatedEpsAvg")
             if est_eps is not None:
                 details["fwd_eps_estimate"] = round(est_eps, 2)
 

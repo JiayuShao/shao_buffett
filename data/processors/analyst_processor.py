@@ -66,7 +66,7 @@ def process_analyst_data(
     estimates = analyst_data.get("estimates", [])
     if estimates:
         latest = estimates[0]
-        current_target = latest.get("estimatedEpsAvg")
+        current_target = latest.get("epsAvg") or latest.get("estimatedEpsAvg")
         last_target = last.get("est_eps_avg")
 
         if current_target and last_target and current_target != last_target:
