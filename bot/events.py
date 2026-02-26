@@ -20,7 +20,7 @@ TOOL_LABELS = {
     "get_earnings_transcript": "Reading transcript",
     "get_sec_filings": "Checking SEC filings",
     "get_research_papers": "Searching research",
-"get_trending_stocks": "Checking what's trending",
+    "get_trending_stocks": "Checking what's trending",
     "get_sentiment": "Analyzing sentiment",
     "get_technical_indicators": "Running technicals",
     "generate_chart": "Generating chart",
@@ -52,6 +52,14 @@ def setup_events(bot: ShaoBuffettBot) -> None:
         # Only respond when @mentioned or in DMs (multi-agent support)
         is_dm = isinstance(message.channel, discord.DMChannel)
         is_mentioned = bot.user is not None and bot.user.mentioned_in(message)
+        log.info(
+            "on_message_gate",
+            author=str(message.author),
+            is_dm=is_dm,
+            is_mentioned=is_mentioned,
+            mentions=[str(u) for u in message.mentions],
+            content_preview=message.content[:80],
+        )
         if not is_dm and not is_mentioned:
             return
 
@@ -69,8 +77,14 @@ def setup_events(bot: ShaoBuffettBot) -> None:
         if not content:
             content = "Hello!"
 
-        # Send initial reply that we'll edit with progress
-        msg = await message.reply("Thinking...")
+        log.info("chat_request", user=str(message.author), content=content[:80])
+
+        try:
+            msg = await message.reply("Thinking...")
+        except discord.HTTPException as e:
+            log.error("thinking_reply_failed", error=str(e))
+            return
+
         last_edit = 0.0
 
         async def on_tool_start(name: str, inp: dict) -> None:
@@ -123,7 +137,10 @@ def setup_events(bot: ShaoBuffettBot) -> None:
 
         except Exception as e:
             log.error("chat_error", error=str(e), user_id=message.author.id)
-            await msg.edit(content="Sorry, I encountered an error processing your message.")
+            try:
+                await msg.edit(content="Sorry, I encountered an error processing your message.")
+            except discord.HTTPException:
+                pass
 
 
 def _split_message(text: str, limit: int = 2000) -> list[str]:

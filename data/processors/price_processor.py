@@ -2,7 +2,6 @@
 
 import structlog
 from typing import Any
-from decimal import Decimal
 from notifications.types import Notification
 from config.constants import NotificationType
 

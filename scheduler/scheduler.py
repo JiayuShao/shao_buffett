@@ -13,7 +13,6 @@ from storage.repositories.alert_repo import AlertRepository
 from data.processors.news_processor import process_news_articles
 from data.processors.price_processor import check_price_alerts
 from data.processors.analyst_processor import process_analyst_data
-from data.processors.earnings_processor import process_earnings
 from data.processors.macro_processor import process_macro_data
 from scheduler.jobs import (
     NEWS_POLL_INTERVAL,

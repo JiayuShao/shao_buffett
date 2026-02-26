@@ -2,7 +2,7 @@
 
 import discord
 from discord.ext import commands
-from utils.formatting import format_currency, format_percent, format_change
+from utils.formatting import format_percent, format_change
 from utils.embed_builder import make_embed, error_embed
 from utils.time_utils import is_market_open, now_et
 from config.constants import EmbedColor

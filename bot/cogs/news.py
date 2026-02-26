@@ -2,7 +2,7 @@
 
 import discord
 from discord.ext import commands
-from utils.formatting import validate_ticker, truncate
+from utils.formatting import validate_ticker
 from utils.embed_builder import news_embed, make_embed, error_embed
 from config.constants import EmbedColor
 

@@ -6,7 +6,7 @@ from ai.router import (
     route_request,
     record_opus_call,
     get_opus_usage,
-    _check_opus_budget,
+    _opus_budget,
     ROUTINE_PATTERNS,
     DEEP_PATTERNS,
     PORTFOLIO_UPGRADE_PATTERNS,
@@ -59,31 +59,31 @@ class TestRoutineRouting:
 # ── Deep patterns → Opus ──
 
 class TestDeepRouting:
-    @patch("ai.router._check_opus_budget", return_value=True)
+    @patch.object(_opus_budget, "check", return_value=True)
     def test_deep_analysis(self, _):
         assert route_request("deep analysis of NVDA") == TIER_DEEP
 
-    @patch("ai.router._check_opus_budget", return_value=True)
+    @patch.object(_opus_budget, "check", return_value=True)
     def test_dcf_model(self, _):
         assert route_request("build a DCF model for MSFT") == TIER_DEEP
 
-    @patch("ai.router._check_opus_budget", return_value=True)
+    @patch.object(_opus_budget, "check", return_value=True)
     def test_comprehensive_report(self, _):
         assert route_request("comprehensive report on Tesla") == TIER_DEEP
 
-    @patch("ai.router._check_opus_budget", return_value=True)
+    @patch.object(_opus_budget, "check", return_value=True)
     def test_compare_vs(self, _):
         assert route_request("compare AAPL vs MSFT and GOOGL") == TIER_DEEP
 
-    @patch("ai.router._check_opus_budget", return_value=True)
+    @patch.object(_opus_budget, "check", return_value=True)
     def test_investment_thesis(self, _):
         assert route_request("write an investment thesis for NVDA") == TIER_DEEP
 
-    @patch("ai.router._check_opus_budget", return_value=True)
+    @patch.object(_opus_budget, "check", return_value=True)
     def test_risk_assessment(self, _):
         assert route_request("risk assessment of my portfolio") == TIER_DEEP
 
-    @patch("ai.router._check_opus_budget", return_value=False)
+    @patch.object(_opus_budget, "check", return_value=False)
     def test_deep_falls_back_to_sonnet_over_budget(self, _):
         assert route_request("deep research on AAPL") == TIER_STANDARD
 
@@ -142,10 +142,9 @@ class TestDefaultRouting:
 
 class TestOpusBudget:
     def test_record_and_get_usage(self):
-        import ai.router as router
         # Reset state
-        router._opus_calls_today = 0
-        router._opus_date = ""
+        _opus_budget._calls = 0
+        _opus_budget._date = ""
 
         record_opus_call()
         used, limit = get_opus_usage()
@@ -153,9 +152,8 @@ class TestOpusBudget:
 
     @patch("ai.router.settings")
     def test_check_budget_resets_on_new_day(self, mock_settings):
-        import ai.router as router
         mock_settings.opus_daily_budget = 20
-        router._opus_calls_today = 10
-        router._opus_date = "2020-01-01"  # Stale date
-        assert _check_opus_budget() is True
-        assert router._opus_calls_today == 0  # Reset
+        _opus_budget._calls = 10
+        _opus_budget._date = "2020-01-01"  # Stale date
+        assert _opus_budget.check(mock_settings.opus_daily_budget) is True
+        assert _opus_budget._calls == 0  # Reset

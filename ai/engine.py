@@ -147,7 +147,10 @@ class AIEngine:
                     "tools": cached_tools,
                 }
                 if model_config.thinking_budget:
-                    create_params["thinking"] = {"type": "adaptive"}
+                    create_params["thinking"] = {
+                        "type": "enabled",
+                        "budget_tokens": model_config.thinking_budget,
+                    }
 
                 # Always stream to avoid SDK timeout on long requests (extended thinking)
                 async with self.client.messages.stream(**create_params) as stream:

@@ -33,7 +33,11 @@ class ConversationManager:
                 limit,
             )
         # Reverse to get chronological order
-        return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+        # Summaries are stored with role='system' but the API only accepts user/assistant
+        return [
+            {"role": "user" if row["role"] == "system" else row["role"], "content": row["content"]}
+            for row in reversed(rows)
+        ]
 
     async def save_message(
         self,

@@ -1,35 +1,48 @@
 """Request classifier for model routing."""
 
+import datetime
 import re
 from ai.models import ModelConfig, HAIKU, SONNET, OPUS, TIER_ROUTINE, TIER_STANDARD, TIER_DEEP
 from config.settings import settings
 
-# Track daily Opus usage
-_opus_calls_today: int = 0
-_opus_date: str = ""
+
+# ── Opus daily budget tracker ──
+
+class _OpusBudget:
+    """Track daily Opus usage with proper reset logic."""
+
+    def __init__(self) -> None:
+        self._calls: int = 0
+        self._date: str = ""
+
+    def check(self, limit: int) -> bool:
+        today = datetime.date.today().isoformat()
+        if today != self._date:
+            self._calls = 0
+            self._date = today
+        return self._calls < limit
+
+    def record(self) -> None:
+        self._calls += 1
+
+    def usage(self, limit: int) -> tuple[int, int]:
+        return self._calls, limit
 
 
-def _check_opus_budget() -> bool:
-    """Check if we're within the daily Opus budget."""
-    import datetime
-    global _opus_calls_today, _opus_date
-    today = datetime.date.today().isoformat()
-    if today != _opus_date:
-        _opus_calls_today = 0
-        _opus_date = today
-    return _opus_calls_today < settings.opus_daily_budget
+_opus_budget = _OpusBudget()
 
 
 def record_opus_call() -> None:
     """Record an Opus call for budget tracking."""
-    global _opus_calls_today
-    _opus_calls_today += 1
+    _opus_budget.record()
 
 
 def get_opus_usage() -> tuple[int, int]:
     """Return (used, limit) for Opus calls today."""
-    return _opus_calls_today, settings.opus_daily_budget
+    return _opus_budget.usage(settings.opus_daily_budget)
 
+
+# ── Pre-compiled routing patterns ──
 
 # Keywords that indicate routine tasks (use Haiku)
 ROUTINE_PATTERNS = [
@@ -65,6 +78,11 @@ PORTFOLIO_UPGRADE_PATTERNS = [
     r"portfolio (risk|exposure|concentration)",
 ]
 
+# Pre-compile all patterns once at module load (~10x faster matching)
+_DEEP_RE = [re.compile(p) for p in DEEP_PATTERNS]
+_PORTFOLIO_RE = [re.compile(p) for p in PORTFOLIO_UPGRADE_PATTERNS]
+_ROUTINE_RE = [re.compile(p) for p in ROUTINE_PATTERNS]
+
 
 def route_request(
     content: str,
@@ -88,22 +106,22 @@ def route_request(
     content_lower = content.lower()
 
     # Check for deep analysis triggers
-    for pattern in DEEP_PATTERNS:
-        if re.search(pattern, content_lower):
-            if _check_opus_budget():
+    for pat in _DEEP_RE:
+        if pat.search(content_lower):
+            if _opus_budget.check(settings.opus_daily_budget):
                 return TIER_DEEP
             return TIER_STANDARD  # Fall back to Sonnet if over budget
 
     # Portfolio-aware upgrade: if user has holdings and asks about portfolio decisions,
     # use at minimum Sonnet (not Haiku) for better recommendations
     if has_portfolio:
-        for pattern in PORTFOLIO_UPGRADE_PATTERNS:
-            if re.search(pattern, content_lower):
+        for pat in _PORTFOLIO_RE:
+            if pat.search(content_lower):
                 return TIER_STANDARD
 
     # Check for routine task triggers
-    for pattern in ROUTINE_PATTERNS:
-        if re.search(pattern, content_lower):
+    for pat in _ROUTINE_RE:
+        if pat.search(content_lower):
             return TIER_ROUTINE
 
     # Default to Sonnet for everything else

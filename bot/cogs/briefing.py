@@ -2,8 +2,7 @@
 
 import discord
 from discord.ext import commands
-from utils.embed_builder import make_embed, error_embed
-from config.constants import EmbedColor
+from utils.embed_builder import error_embed
 from bot.events import _split_message
 
 

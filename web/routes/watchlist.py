@@ -1,6 +1,6 @@
 """Web watchlist management routes."""
 
-from quart import Blueprint, render_template, request, session, redirect, url_for, flash
+from quart import Blueprint, render_template, request, session, redirect, url_for
 from storage.repositories.watchlist_repo import WatchlistRepository
 from storage.database import get_pool
 from utils.formatting import validate_ticker

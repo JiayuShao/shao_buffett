@@ -1,6 +1,5 @@
 """Finnhub data collector — quotes, analyst ratings, earnings, news, insider trades."""
 
-import asyncio
 import json
 from typing import Any
 import structlog

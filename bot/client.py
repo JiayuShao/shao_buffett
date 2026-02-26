@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import asyncpg
 import discord
 import structlog
-from config.settings import settings
 
 if TYPE_CHECKING:
     from ai.engine import AIEngine

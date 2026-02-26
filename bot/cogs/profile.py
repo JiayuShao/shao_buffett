@@ -6,7 +6,7 @@ from storage.repositories.user_repo import UserRepository
 from storage.repositories.watchlist_repo import WatchlistRepository
 from storage.repositories.notes_repo import NotesRepository
 from utils.embed_builder import make_embed, success_embed
-from config.constants import EmbedColor, SECTORS, METRIC_OPTIONS, RiskTolerance
+from config.constants import EmbedColor, METRIC_OPTIONS
 
 
 class ProfileCog(commands.Cog):
