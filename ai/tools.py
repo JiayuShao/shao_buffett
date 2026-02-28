@@ -7,7 +7,8 @@ FINANCIAL_TOOLS = [
         "description": (
             "Get the current stock price quote for a ticker symbol. Returns price, change, "
             "change%, high, low, open, previous close. Use this for quick price checks or when "
-            "the user asks 'what's X at?' NOT for detailed financial analysis — use get_fundamentals for that."
+            "the user asks 'what's X at?' NOT for detailed financial analysis — use get_fundamentals for that. "
+            "Pairs well with: get_company_profile (context), get_news (catalysts)."
         ),
         "input_schema": {
             "type": "object",
@@ -82,7 +83,8 @@ FINANCIAL_TOOLS = [
         "description": (
             "Get historical earnings data: EPS actual vs estimate, revenue, and earnings surprises for "
             "recent quarters. Use when discussing earnings performance, beat/miss history, or earnings trends. "
-            "For earnings call details, use get_earnings_transcript instead."
+            "For earnings call details, use get_earnings_transcript instead. "
+            "Pairs well with: get_earnings_transcript (management commentary), get_fundamentals (valuation context)."
         ),
         "input_schema": {
             "type": "object",
@@ -100,7 +102,8 @@ FINANCIAL_TOOLS = [
         "description": (
             "Get latest financial news articles with sentiment scores. Optionally filter by stock symbol. "
             "Use for 'what's happening with X?', market news updates, or when recent events could affect "
-            "a stock. For macro/economic news, prefer get_macro_data."
+            "a stock. For macro/economic news, prefer get_macro_data. "
+            "Pairs well with: get_sentiment (sentiment trends), get_trending_stocks (market pulse)."
         ),
         "input_schema": {
             "type": "object",
@@ -272,7 +275,8 @@ FINANCIAL_TOOLS = [
         "description": (
             "Get technical analysis indicators: SMA (20/50/200-day), RSI (14), EMA (12/26), MACD. "
             "Use for trend direction, support/resistance levels, overbought/oversold signals, or momentum analysis. "
-            "Combine with get_fundamentals for a complete fundamental + technical picture."
+            "Combine with get_fundamentals for a complete fundamental + technical picture. "
+            "Pairs well with: get_quote (current price context), get_fundamentals (complete analysis)."
         ),
         "input_schema": {
             "type": "object",
@@ -428,7 +432,8 @@ FINANCIAL_TOOLS = [
         "description": (
             "Get the user's portfolio holdings: symbols, shares, cost basis, and account type. "
             "Use when discussing portfolio value, allocation, specific positions, or before giving "
-            "investment advice. For a health assessment, use get_portfolio_health instead."
+            "investment advice. For a health assessment, use get_portfolio_health instead. "
+            "Pairs well with: get_portfolio_health (quality assessment), get_factor_grades (per-stock rating)."
         ),
         "input_schema": {
             "type": "object",
@@ -524,9 +529,11 @@ FINANCIAL_TOOLS = [
     },
 ]
 
-# Subset of tools for Haiku (routine) requests — saves ~1.5K tokens per call
+# Subset of tools for Haiku (routine) requests — saves tokens per call
 ROUTINE_TOOL_NAMES = {
     "get_quote", "get_company_profile", "get_news", "get_trending_stocks",
     "save_note", "get_user_notes",
+    "get_earnings", "get_technical_indicators", "get_macro_data",
+    "get_portfolio", "get_financial_profile", "generate_chart",
 }
 ROUTINE_TOOLS = [t for t in FINANCIAL_TOOLS if t["name"] in ROUTINE_TOOL_NAMES]

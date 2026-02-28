@@ -5,7 +5,7 @@
 - Async throughout (asyncio, aiohttp, asyncpg)
 - Multi-model routing: Haiku (routine), Sonnet (standard), Opus (deep analysis)
 - Portfolio-aware routing: upgrades to Sonnet for portfolio decisions
-- Dynamic tool filtering: Haiku gets 6 tools, Sonnet/Opus get all 24 (~1.5K token savings per Haiku request)
+- Dynamic tool filtering: Haiku gets 12 tools, Sonnet/Opus get all 24
 - Web dashboard: Quart + Discord OAuth + Plotly.js
 - Personal analyst features: cross-conversation notes, portfolio tracking, proactive insights
 
@@ -18,10 +18,12 @@
 - Scheduler parallelism: `asyncio.TaskGroup` for quote fetching, `asyncio.gather(return_exceptions=True)` for independent insight checks
 - True streaming: final response uses `client.messages.stream()` for real-time text delivery
 - Consolidated tool loop: single `_run_tool_loop()` with `stream_final` parameter replaces two separate methods
-- Tool result capping: `MAX_TOOL_RESULT_CHARS = 12_000` truncates large results (transcripts, filings)
+- Tool result capping: `MAX_TOOL_RESULT_CHARS = 12_000` truncates large results with visible marker
 - Background summarization: `summarize_if_needed()` runs as fire-and-forget `asyncio.create_task()`
 - `user_id` threaded through tool loop so note/portfolio tools know who's calling
-- System prompt injected with user's notes, portfolio, and financial profile before each chat
+- System prompt injected with user's notes (symbol-relevant first), portfolio, and financial profile before each chat
+- System prompt includes Tool Planning Protocol and Tool Error Recovery sections
+- Conversation history: 15 messages (up from 10), summarization threshold at 20
 - Activity logging extracts mentioned symbols and classifies query type
 - Notifications: processors detect changes → create Notification objects → dispatcher routes to users
 - Proactive insights: scheduler cross-references portfolio with market data every 30 min
@@ -29,6 +31,7 @@
   - Earnings calendar digests (weekly, when 2+ holdings report)
   - Insider trading alerts ($500K+ transactions)
   - Auto-AI earnings transcript analysis (within 48h of reporting)
+  - Breaking AI/tech news delivery (all users, capped at 3 per cycle)
 - Factor grades: quantitative A+-F ratings across 5 dimensions relative to sector peers
 - Pre-compiled regex: router patterns compiled at module load for faster matching
 - Opus budget: `_OpusBudget` class (replaces mutable globals) tracks daily usage
@@ -41,7 +44,7 @@
 - MarketAux: financial news with sentiment
 - FMP: fundamentals, ratios, earnings transcripts, sector performance
 - SEC EDGAR: 10-K, 10-Q, 8-K filings
-- arXiv: quantitative finance research papers
+- arXiv: quantitative finance research papers + AI/ML research papers
 
 ## AI Tools (24 total)
 - 15 financial data tools (quote, profile, fundamentals, analyst, earnings, news, macro, sector, transcript, filings, papers, trending_stocks, sentiment, technical_indicators, generate_chart)
@@ -54,6 +57,7 @@
 - `conversation_notes` — cross-conversation memory with note types and symbol tagging (migration 002)
 - `portfolio_holdings`, `financial_profile` — portfolio tracking with account types (migration 003)
 - `user_activity`, `proactive_insights` — activity tracking and insight queue (migration 004)
+- Migration 008: adds `ai_news` to proactive_insights CHECK constraint
 
 ## Running
 ```bash

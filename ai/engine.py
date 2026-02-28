@@ -206,7 +206,11 @@ class AIEngine:
         """Serialize tool result and truncate if too large."""
         result_str = json.dumps(result, default=str)
         if len(result_str) > MAX_TOOL_RESULT_CHARS:
-            return result_str[:MAX_TOOL_RESULT_CHARS] + '... [truncated]'
+            removed = len(result_str) - MAX_TOOL_RESULT_CHARS
+            return (
+                result_str[:MAX_TOOL_RESULT_CHARS]
+                + f"\n\n[TRUNCATED: {removed:,} characters removed. Ask for specific sections if needed.]"
+            )
         return result_str
 
     async def _stream_final_response(
@@ -276,10 +280,10 @@ class AIEngine:
             if isinstance(interests, dict) and interests.get("sectors"):
                 sys_prompt += f"\nUser's sector interests: {', '.join(interests['sectors'])}"
 
-        sys_prompt = await self._inject_user_context(user_id, sys_prompt)
+        sys_prompt = await self._inject_user_context(user_id, sys_prompt, content=content)
 
         # Build messages
-        messages: list[dict[str, Any]] = list(history[-10:])
+        messages: list[dict[str, Any]] = list(history[-15:])
 
         user_content: list[dict[str, Any]] | str
         if attachments:
@@ -329,16 +333,38 @@ class AIEngine:
 
     # ── User context injection ──
 
-    async def _inject_user_context(self, user_id: int, sys_prompt: str) -> str:
+    async def _inject_user_context(self, user_id: int, sys_prompt: str, content: str = "") -> str:
         """Inject user's notes and portfolio into the system prompt."""
         try:
-            # Parallelize all 4 independent DB queries
-            recent_notes, action_items, holdings, fin_profile = await asyncio.gather(
-                self.notes_repo.get_recent(user_id, limit=15),
-                self.notes_repo.get_active_action_items(user_id),
-                self._safe_get_holdings(user_id),
-                self._safe_get_financial_profile(user_id),
-            )
+            # Extract symbols from the current message for relevant note fetching
+            import re
+            noise = {"I", "A", "THE", "AND", "OR", "FOR", "IN", "ON", "AT", "TO", "IS", "IT", "AN", "OF", "MY", "AM", "DO", "IF", "SO", "NO", "UP", "VS"}
+            mentioned_symbols = [s for s in re.findall(r'\b([A-Z]{1,5})\b', content) if s not in noise] if content else []
+
+            if mentioned_symbols:
+                # Fetch symbol-relevant notes + recent general notes in parallel
+                symbol_notes, general_notes, action_items, holdings, fin_profile = await asyncio.gather(
+                    self.notes_repo.get_for_symbols(user_id, mentioned_symbols[:10]),
+                    self.notes_repo.get_recent(user_id, limit=15),
+                    self.notes_repo.get_active_action_items(user_id),
+                    self._safe_get_holdings(user_id),
+                    self._safe_get_financial_profile(user_id),
+                )
+                # Merge: symbol-relevant first (up to 10), then fill with general (deduped by ID)
+                seen_ids = {n["id"] for n in symbol_notes[:10]}
+                recent_notes = list(symbol_notes[:10])
+                for n in general_notes:
+                    if n["id"] not in seen_ids and len(recent_notes) < 15:
+                        recent_notes.append(n)
+                        seen_ids.add(n["id"])
+            else:
+                # No symbols detected — keep existing behavior
+                recent_notes, action_items, holdings, fin_profile = await asyncio.gather(
+                    self.notes_repo.get_recent(user_id, limit=15),
+                    self.notes_repo.get_active_action_items(user_id),
+                    self._safe_get_holdings(user_id),
+                    self._safe_get_financial_profile(user_id),
+                )
 
             if recent_notes:
                 notes_text = "\n## Your Notes About This User\n"

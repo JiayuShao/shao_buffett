@@ -114,7 +114,7 @@ class ConversationManager:
                 "SELECT COUNT(*) FROM conversations WHERE discord_id = $1 AND channel_id = $2",
                 user_id, channel_id,
             )
-            if count is None or count <= 15:
+            if count is None or count <= 20:
                 return
 
             # Get all messages ordered chronologically

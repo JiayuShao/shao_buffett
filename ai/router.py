@@ -51,6 +51,10 @@ ROUTINE_PATTERNS = [
     r"^(show|list) (watchlist|alerts)",
     r"classify|categorize|label",
     r"sentiment score",
+    r"show.*news|latest news",
+    r"what.*(trending|hot)",
+    r"any (updates|news)",
+    r"how (is|are) .*doing",
 ]
 
 # Keywords that indicate deep analysis (use Opus)
@@ -63,6 +67,11 @@ DEEP_PATTERNS = [
     r"investment thesis",
     r"risk assessment",
     r"synthesize|synthesis",
+    r"deep dive",
+    r"thorough analysis",
+    r"in.depth",
+    r"research.*report",
+    r"detailed breakdown",
 ]
 
 # Keywords that need at least Sonnet when user has a portfolio (not Haiku)
@@ -76,6 +85,9 @@ PORTFOLIO_UPGRADE_PATTERNS = [
     r"position siz",
     r"(add to|reduce|exit|close) (my )?(position|holding)",
     r"portfolio (risk|exposure|concentration)",
+    r"what if i (buy|sell|invest)",
+    r"tax.*(implication|consequence|impact)",
+    r"risk.*(reward|return) ratio",
 ]
 
 # Pre-compile all patterns once at module load (~10x faster matching)

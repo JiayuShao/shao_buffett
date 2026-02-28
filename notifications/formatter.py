@@ -195,6 +195,10 @@ def _format_proactive_insight(notif: Notification) -> discord.Embed:
         "news_relevant": ("📰", EmbedColor.NEWS),
         "action_reminder": ("📋", EmbedColor.WARNING),
         "symbol_suggestion": ("💡", EmbedColor.INFO),
+        "ai_news": ("\U0001f916", EmbedColor.AI_NEWS),
+        "earnings_calendar": ("\U0001f4c5", EmbedColor.EARNINGS),
+        "insider_trade": ("\U0001f464", EmbedColor.WARNING),
+        "earnings_analysis": ("\U0001f4ca", EmbedColor.EARNINGS),
     }
     emoji, color = type_config.get(insight_type, ("🔔", EmbedColor.INFO))
 

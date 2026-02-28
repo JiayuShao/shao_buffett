@@ -1,5 +1,6 @@
 """Constants used across the application."""
 
+import re
 from enum import Enum
 
 
@@ -17,6 +18,7 @@ class EmbedColor(int, Enum):
     ALERT = 0xFF6D00
     MACRO = 0x651FFF
     RESEARCH = 0x00BFA5
+    AI_NEWS = 0x7B1FA2
 
 
 # Rate limits per API (requests per minute)
@@ -117,3 +119,30 @@ MAX_ALERTS_PER_USER = 25
 MAX_CONVERSATION_HISTORY = 20
 MAX_EMBED_DESCRIPTION = 4096
 MAX_EMBED_FIELD_VALUE = 1024
+MAX_AI_NEWS_PER_USER = 3
+
+# AI/tech news keyword matching
+AI_NEWS_KEYWORDS = [
+    # Companies
+    "OpenAI", "Anthropic", "DeepMind", "Google AI", "Meta AI", "Microsoft AI",
+    "Nvidia", "xAI", "Mistral", "Cohere", "Stability AI", "Hugging Face",
+    "Perplexity", "Inflection", "Character AI",
+    # Technical terms
+    "LLM", "large language model", "GPT", "transformer", "foundation model",
+    "generative AI", "gen AI", "neural network", "deep learning",
+    "machine learning", "natural language processing", "NLP",
+    "computer vision", "reinforcement learning",
+    # Domain terms
+    "AI safety", "AI regulation", "AI chip", "AI accelerator",
+    "artificial intelligence", "AGI", "AI model", "AI startup",
+    "AI agent", "multimodal AI",
+]
+_AI_NEWS_RE = re.compile(
+    "|".join(re.escape(kw) for kw in AI_NEWS_KEYWORDS),
+    re.IGNORECASE,
+)
+
+
+def is_ai_related(text: str) -> bool:
+    """Check if text contains AI/tech keywords."""
+    return bool(_AI_NEWS_RE.search(text))

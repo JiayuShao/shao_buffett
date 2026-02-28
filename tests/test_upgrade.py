@@ -194,7 +194,7 @@ class TestConversationSummarization:
         return ConversationManager(fake_pool)
 
     async def test_no_summarize_under_threshold(self, conv_mgr, fake_pool):
-        """Should not summarize when <= 15 messages."""
+        """Should not summarize when <= 20 messages."""
         fake_pool.conn.fetchval_result = 10
         mock_engine = MagicMock()
         mock_engine.analyze = AsyncMock()
@@ -202,21 +202,21 @@ class TestConversationSummarization:
         mock_engine.analyze.assert_not_awaited()
 
     async def test_no_summarize_at_threshold(self, conv_mgr, fake_pool):
-        """Should not summarize at exactly 15 messages."""
-        fake_pool.conn.fetchval_result = 15
+        """Should not summarize at exactly 20 messages."""
+        fake_pool.conn.fetchval_result = 20
         mock_engine = MagicMock()
         mock_engine.analyze = AsyncMock()
         await conv_mgr.summarize_if_needed(123, 456, mock_engine)
         mock_engine.analyze.assert_not_awaited()
 
     async def test_summarize_over_threshold(self, conv_mgr, fake_pool):
-        """Should summarize when > 15 messages."""
-        fake_pool.conn.fetchval_result = 20
-        # Build 20 fake messages
+        """Should summarize when > 20 messages."""
+        fake_pool.conn.fetchval_result = 25
+        # Build 25 fake messages
         messages = [
             {"id": i, "role": "user" if i % 2 == 0 else "assistant",
              "content": f"Message {i}", "is_summary": False}
-            for i in range(20)
+            for i in range(25)
         ]
         fake_pool.conn.fetch_results = [messages]
 
@@ -231,10 +231,10 @@ class TestConversationSummarization:
 
     async def test_summarize_handles_error(self, conv_mgr, fake_pool):
         """Should handle summarization errors gracefully."""
-        fake_pool.conn.fetchval_result = 20
+        fake_pool.conn.fetchval_result = 25
         messages = [
             {"id": i, "role": "user", "content": f"msg {i}", "is_summary": False}
-            for i in range(20)
+            for i in range(25)
         ]
         fake_pool.conn.fetch_results = [messages]
 

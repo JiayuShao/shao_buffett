@@ -22,6 +22,15 @@ QFIN_CATEGORIES = [
     "q-fin.TR",  # Trading and Market Microstructure
 ]
 
+# arXiv categories for AI/ML research
+AI_CATEGORIES = [
+    "cs.AI",   # Artificial Intelligence
+    "cs.LG",   # Machine Learning
+    "cs.CL",   # Computation and Language (NLP)
+    "cs.CV",   # Computer Vision
+    "cs.NE",   # Neural and Evolutionary Computing
+]
+
 
 class ArxivCollector(BaseCollector):
     api_name = "arxiv"
@@ -81,6 +90,16 @@ class ArxivCollector(BaseCollector):
         """Search for AI/ML in finance papers."""
         return await self.search_papers(
             query="machine learning OR deep learning OR artificial intelligence",
+            max_results=max_results,
+        )
+
+    async def search_ai_research(
+        self, query: str | None = None, max_results: int = 10
+    ) -> list[dict[str, Any]]:
+        """Search for AI/ML research papers across core AI categories."""
+        return await self.search_papers(
+            query=query,
+            categories=AI_CATEGORIES,
             max_results=max_results,
         )
 

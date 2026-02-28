@@ -11,7 +11,7 @@ from data.collectors.marketaux import MarketAuxCollector
 from data.collectors.fmp import FMPCollector
 from data.collectors.sec_edgar import SECEdgarCollector
 from data.collectors.arxiv_research import ArxivCollector
-from config.constants import API_RATE_LIMITS, CACHE_TTL
+from config.constants import API_RATE_LIMITS, CACHE_TTL, is_ai_related
 
 log = structlog.get_logger(__name__)
 
@@ -427,4 +427,58 @@ class DataManager:
             return cached
         data = await self.finnhub.get_insider_transactions(symbol)
         self.cache.set(key, data, CACHE_TTL["analyst"])  # 6 hour TTL
+        return data
+
+    async def get_ai_news(self) -> dict[str, Any]:
+        """Get AI/tech news from multiple sources with filtering and dedup."""
+        key = "ai_news:latest"
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+
+        # Parallel fetch from 3 sources
+        marketaux_result, finnhub_result, arxiv_result = await asyncio.gather(
+            self.marketaux.get_news(sectors="Technology", limit=10),
+            self.finnhub.get_general_news(),
+            self.arxiv.search_ai_research(max_results=10),
+            return_exceptions=True,
+        )
+
+        articles: list[dict[str, Any]] = []
+        seen_urls: set[str] = set()
+
+        # Filter MarketAux results for AI relevance
+        if not isinstance(marketaux_result, Exception):
+            for article in marketaux_result:
+                text = f"{article.get('title', '')} {article.get('description', '')}"
+                url = article.get("url", "")
+                if is_ai_related(text) and url and url not in seen_urls:
+                    seen_urls.add(url)
+                    articles.append(article)
+
+        # Filter Finnhub results for AI relevance
+        if not isinstance(finnhub_result, Exception):
+            for a in finnhub_result:
+                text = f"{a.get('headline', '')} {a.get('summary', '')}"
+                url = a.get("url", "")
+                if is_ai_related(text) and url and url not in seen_urls:
+                    seen_urls.add(url)
+                    articles.append({
+                        "title": a.get("headline", ""),
+                        "description": a.get("summary", ""),
+                        "snippet": a.get("summary", "")[:200],
+                        "url": url,
+                        "source": a.get("source", ""),
+                        "published_at": a.get("datetime", ""),
+                        "symbols": [],
+                        "sentiment": None,
+                    })
+
+        # arXiv papers (already AI-focused by category)
+        papers: list[dict[str, Any]] = []
+        if not isinstance(arxiv_result, Exception):
+            papers = arxiv_result[:5]
+
+        data = {"articles": articles[:20], "papers": papers}
+        self.cache.set(key, data, 120)  # 2 min TTL
         return data

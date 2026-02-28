@@ -15,7 +15,7 @@ from storage.repositories.watchlist_repo import WatchlistRepository
 from storage.repositories.user_repo import UserRepository
 from notifications.dispatcher import NotificationDispatcher
 from notifications.types import Notification
-from config.constants import NotificationType
+from config.constants import NotificationType, is_ai_related, MAX_AI_NEWS_PER_USER
 
 log = structlog.get_logger(__name__)
 
@@ -66,6 +66,7 @@ class ProactiveInsightGenerator:
         self.watchlist_repo = WatchlistRepository(db_pool)
         self.user_repo = UserRepository(db_pool)
         self._sector_news_cache: dict[str, list[dict]] = {}
+        self._ai_news_cache: dict | None = None
 
     async def generate_all(self) -> int:
         """Generate proactive insights for all users. Returns count of insights created."""
@@ -74,8 +75,9 @@ class ProactiveInsightGenerator:
         portfolio_set = set(portfolio_users)
         all_user_ids = list(dict.fromkeys(portfolio_users + watchlist_users))
 
-        # Pre-fetch sector news for all users (rate-limit friendly)
+        # Pre-fetch sector news and AI news for all users (rate-limit friendly)
         await self._prefetch_sector_news(all_user_ids)
+        await self._prefetch_ai_news()
 
         total = 0
         for user_id in portfolio_users:
@@ -95,8 +97,9 @@ class ProactiveInsightGenerator:
             except Exception as e:
                 log.error("proactive_user_error", user_id=user_id, error=str(e))
 
-        # Clear cache after cycle
+        # Clear caches after cycle
         self._sector_news_cache.clear()
+        self._ai_news_cache = None
         return total
 
     async def _prefetch_sector_news(self, user_ids: list[int]) -> None:
@@ -164,6 +167,7 @@ class ProactiveInsightGenerator:
                 self._suggest_watchlist_additions(user_id, held_symbols),
             ])
         check_coros.append(self._check_stale_action_items(user_id))
+        check_coros.append(self._check_ai_news(user_id))
         if interests:
             check_coros.append(self._check_interest_news(user_id, interests, all_symbols))
 
@@ -537,6 +541,114 @@ class ProactiveInsightGenerator:
                 count += 1
             except Exception as e:
                 log.debug("interest_news_error", url=url, error=str(e))
+
+        return count
+
+    async def _prefetch_ai_news(self) -> None:
+        """Fetch AI news once per cycle, shared across all users."""
+        try:
+            self._ai_news_cache = await self.dm.get_ai_news()
+            article_count = len(self._ai_news_cache.get("articles", []))
+            paper_count = len(self._ai_news_cache.get("papers", []))
+            log.debug("prefetched_ai_news", articles=article_count, papers=paper_count)
+        except Exception as e:
+            log.debug("prefetch_ai_news_error", error=str(e))
+            # Fall back to Technology sector news if available
+            tech_articles = self._sector_news_cache.get("Technology", [])
+            if tech_articles:
+                ai_articles = [a for a in tech_articles
+                               if is_ai_related(f"{a.get('title', '')} {a.get('description', '')}")]
+                self._ai_news_cache = {"articles": ai_articles, "papers": []}
+            else:
+                self._ai_news_cache = {"articles": [], "papers": []}
+
+    async def _check_ai_news(self, user_id: int) -> int:
+        """Check AI news cache and create insights for a user."""
+        if not self._ai_news_cache:
+            return 0
+
+        count = 0
+        articles = self._ai_news_cache.get("articles", [])
+        papers = self._ai_news_cache.get("papers", [])
+
+        # Process articles
+        for article in articles:
+            if count >= MAX_AI_NEWS_PER_USER:
+                break
+
+            url = article.get("url", "")
+            if not url:
+                continue
+
+            ch = _content_hash(url)
+            try:
+                if await self.insight_repo.was_recently_created(user_id, "ai_news", ch):
+                    continue
+
+                title = article.get("title", "Untitled")
+                description = article.get("description", article.get("snippet", ""))[:200]
+                sentiment = article.get("sentiment")
+                source = article.get("source", "")
+
+                content = f"**{title}**"
+                if description:
+                    content += f"\n{description}"
+                if sentiment is not None:
+                    label = "Positive" if sentiment > 0 else "Negative" if sentiment < 0 else "Neutral"
+                    content += f"\nSentiment: {label} ({sentiment:+.2f})"
+                if source:
+                    content += f"\nSource: {source}"
+                if url:
+                    content += f"\n[Read more]({url})"
+
+                await self.insight_repo.create(
+                    discord_id=user_id,
+                    insight_type="ai_news",
+                    title=f"AI News: {title[:80]}",
+                    content=content,
+                    content_hash=ch,
+                )
+                count += 1
+            except Exception as e:
+                log.debug("ai_news_insight_error", url=url, error=str(e))
+
+        # Process papers (if room under cap)
+        for paper in papers:
+            if count >= MAX_AI_NEWS_PER_USER:
+                break
+
+            arxiv_id = paper.get("arxiv_id", "")
+            if not arxiv_id:
+                continue
+
+            ch = _content_hash(arxiv_id)
+            try:
+                if await self.insight_repo.was_recently_created(user_id, "ai_news", ch):
+                    continue
+
+                title = paper.get("title", "Untitled")
+                summary = paper.get("summary", "")[:200]
+                authors = ", ".join(paper.get("authors", [])[:3])
+                pdf_url = paper.get("pdf_url", arxiv_id)
+
+                content = f"**{title}**"
+                if authors:
+                    content += f"\nAuthors: {authors}"
+                if summary:
+                    content += f"\n{summary}"
+                if pdf_url:
+                    content += f"\n[Read paper]({pdf_url})"
+
+                await self.insight_repo.create(
+                    discord_id=user_id,
+                    insight_type="ai_news",
+                    title=f"AI Research: {title[:80]}",
+                    content=content,
+                    content_hash=ch,
+                )
+                count += 1
+            except Exception as e:
+                log.debug("ai_paper_insight_error", arxiv_id=arxiv_id, error=str(e))
 
         return count
 
